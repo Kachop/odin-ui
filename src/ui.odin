@@ -1,4 +1,4 @@
-#+feature dynamic-literals
+#+feature dynamic-literals global-context
 
 package rwb
 
@@ -459,15 +459,48 @@ init :: proc() {
 }
 
 create_window :: proc(width, height: i32, title: cstring) -> platform.Window_Error {
-	err: platform.Window_Error
-	state.window_state, err = platform.create_window(width, height, title)
+	//err: platform.Window_Error
+	//state.window_state, err = platform.create_window(width, height, title)
 
-	renderer.init_context()
-
-	if err != .None {
-		fmt.eprint("Failed to create window")
-		return err
+	state.window_state.window = glfw.CreateWindow(width, height, title, nil, nil)
+	if (state.window_state.window == nil) {
+		fmt.eprintln("Failed to create window")
+		glfw.Terminate()
+		return platform.Window_Error.Create_Error
 	}
+	fmt.println("Initialised window:", state.window_state.window)
+
+	state.window_state.window_width = f32(width)
+	state.window_state.window_height = f32(height)
+
+	glfw.MakeContextCurrent(state.window_state.window)
+	fmt.println("Current context:", glfw.GetCurrentContext())
+
+	glfw.SetFramebufferSizeCallback(state.window_state.window, platform.framebuffer_size_callback)
+	glfw.SetWindowSizeCallback(state.window_state.window, platform.window_size_callback)
+
+	glfw.SwapInterval(1)
+
+	//renderer.init_context()
+
+	fmt.println("init_context", glfw.GetCurrentContext())
+	gl.load_up_to(4, 6, glfw.gl_set_proc_address)
+
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+
+	renderer.create_shader_program(
+		.Rect,
+		"/mnt/Guido/Development/Odin/RWB-UI/src/renderer/shaders/rec.vs",
+		"/mnt/Guido/Development/Odin/RWB-UI/src/renderer/shaders/rec.fs",
+	)
+
+	renderer.use_shader_program(renderer.state.shaders[.Rect])
+
+	//if err != .None {
+	//	fmt.eprint("Failed to create window")
+	//	return err
+	//}
 
 	//glfw.SetInputMode(state.window, glfw.STICKY_KEYS, 1)
 	glfw.SetKeyCallback(state.window_state.window, platform.key_callback)

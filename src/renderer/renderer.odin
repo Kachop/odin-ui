@@ -44,7 +44,6 @@ Render_State :: struct {
 	indices_list:  [dynamic]u32,
 }
 
-@(private)
 state: Render_State
 
 init :: proc() {

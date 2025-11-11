@@ -116,14 +116,12 @@ set_window_size_callback :: proc(callback: proc "c" (_: glfw.WindowHandle, width
 	glfw.SetWindowSizeCallback(state.window, callback)
 }
 
-@(private)
 window_size_callback :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
 	state.window_width = f32(width)
 	state.window_height = f32(height)
 	glfw.SetWindowSize(window, width, height)
 }
 
-@(private)
 framebuffer_size_callback :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
 	state.window_width = f32(width)
 	state.window_height = f32(height)
