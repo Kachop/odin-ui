@@ -179,8 +179,8 @@ main :: proc() {
 			rwb.ui_box_start(rwb.ui_id("Main content"), main_content)
 
 			test_button(rwb.ui_id("Test button1"))
-			//test_button(rwb.ui_id("Test button2"))
-			//test_button(rwb.ui_id("Test button3"))
+			test_button(rwb.ui_id("Test button2"))
+			test_button(rwb.ui_id("Test button3"))
 			//test_button(rwb.ui_id("Test button4"))
 			//test_button(rwb.ui_id("Test button5"))
 

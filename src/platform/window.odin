@@ -102,8 +102,20 @@ close_window :: proc() {
 	glfw.Terminate()
 }
 
+clear_current_context :: proc() {
+	glfw.MakeContextCurrent(nil)
+}
+
 set_error_callback :: proc(callback: proc "c" (_: i32, _: cstring)) {
 	glfw.SetErrorCallback(callback)
+}
+
+set_key_callback :: proc(callback: proc "c" (_: glfw.WindowHandle, _, _, _, _: i32)) {
+	glfw.SetKeyCallback(state.window, callback)
+}
+
+set_char_callback :: proc(callback: proc "c" (_: glfw.WindowHandle, char: rune)) {
+	glfw.SetCharCallback(state.window, callback)
 }
 
 set_framebuffer_size_callback :: proc(

@@ -1,4 +1,4 @@
-#+feature dynamic-literals global-context
+#+feature dynamic-literals
 
 package rwb
 
@@ -14,8 +14,6 @@ import "core:sync"
 import "core:thread"
 import platform "platform"
 import renderer "renderer"
-import gl "vendor:OpenGL"
-import "vendor:glfw"
 
 /*
 TODO:Potentially add proportional size controlls.
@@ -23,6 +21,7 @@ DONE:1.Handle all layout cases
 TODO:2.Adjust sizes if there are violations (do simple cases first.) Uses strictness.
 
 Order for adjusting violations.
+
 - look at all children and proportionally reduce the size of anything with a non-1 strictness.
 - If all 1 strictness look for .Grow_From_Children, go a level down and shrink that.
 
@@ -31,6 +30,7 @@ NOTE:Ctrls with scrollable flag cannot have violations in the scrolling axis.
 If no solution can be found either:
 1. Pluck last items from tree and do not display (Can cause issues with functionality.)
 2. Make the Ctrl scrollable in that axis.
+
 NOTE:Make this some option set by the user
 
 TODO:3.Figure out hovering
@@ -51,16 +51,13 @@ Basic controlls to add:
 Rectangle :: renderer.Rectangle
 
 clear_colour :: renderer.clear_colour
-
 set_window_size_limits :: platform.set_window_size_limits
-
 process_input :: platform.process_input
 get_char :: platform.get_char
 is_key_pressed :: platform.is_key_pressed
 is_key_released :: platform.is_key_released
 is_key_up :: platform.is_key_up
 is_key_down :: platform.is_key_down
-
 
 ui_arena: vmem.Arena
 frame_arena: vmem.Arena
@@ -429,7 +426,9 @@ UI_State :: struct {
 state: UI_State
 
 @(init)
-init :: proc() {
+init :: proc "contextless" () {
+	context = runtime.default_context()
+
 	arena_err := vmem.arena_init_static(&ui_arena, 100 * mem.Megabyte)
 	if arena_err == .None {
 		ui_alloc = vmem.arena_allocator(&ui_arena)
@@ -459,56 +458,24 @@ init :: proc() {
 }
 
 create_window :: proc(width, height: i32, title: cstring) -> platform.Window_Error {
-	//err: platform.Window_Error
-	//state.window_state, err = platform.create_window(width, height, title)
+	err: platform.Window_Error
+	state.window_state, err = platform.create_window(width, height, title)
 
-	state.window_state.window = glfw.CreateWindow(width, height, title, nil, nil)
-	if (state.window_state.window == nil) {
-		fmt.eprintln("Failed to create window")
-		glfw.Terminate()
-		return platform.Window_Error.Create_Error
+	renderer.init_context()
+
+	if err != .None {
+		fmt.eprint("Failed to create window")
+		return err
 	}
-	fmt.println("Initialised window:", state.window_state.window)
-
-	state.window_state.window_width = f32(width)
-	state.window_state.window_height = f32(height)
-
-	glfw.MakeContextCurrent(state.window_state.window)
-	fmt.println("Current context:", glfw.GetCurrentContext())
-
-	glfw.SetFramebufferSizeCallback(state.window_state.window, platform.framebuffer_size_callback)
-	glfw.SetWindowSizeCallback(state.window_state.window, platform.window_size_callback)
-
-	glfw.SwapInterval(1)
-
-	//renderer.init_context()
-
-	fmt.println("init_context", glfw.GetCurrentContext())
-	gl.load_up_to(4, 6, glfw.gl_set_proc_address)
-
-	gl.Enable(gl.BLEND)
-	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
-
-	renderer.create_shader_program(
-		.Rect,
-		"/mnt/Guido/Development/Odin/RWB-UI/src/renderer/shaders/rec.vs",
-		"/mnt/Guido/Development/Odin/RWB-UI/src/renderer/shaders/rec.fs",
-	)
-
-	renderer.use_shader_program(renderer.state.shaders[.Rect])
-
-	//if err != .None {
-	//	fmt.eprint("Failed to create window")
-	//	return err
-	//}
 
 	//glfw.SetInputMode(state.window, glfw.STICKY_KEYS, 1)
-	glfw.SetKeyCallback(state.window_state.window, platform.key_callback)
-	glfw.SetCharCallback(state.window_state.window, platform.char_callback)
 
-	glfw.MakeContextCurrent(nil)
+	platform.set_key_callback(platform.key_callback)
+	platform.set_char_callback(platform.char_callback)
+	platform.clear_current_context()
 
 	thread.start(state.render_thread)
+
 	return .None
 }
 
@@ -532,17 +499,9 @@ render_proc :: proc(t: ^thread.Thread) {
 		if state.rendering {
 			//Check if new tree is being built
 			sync.lock(&state.render_mutex)
-
-			glfw.MakeContextCurrent(state.window_state.window)
-			fmt.println("rendering:", glfw.GetCurrentContext())
-
-			width, height := platform.get_window_size()
-			gl.Viewport(0, 0, cast(i32)width, cast(i32)height)
-
 			renderer.begin_drawing(state.window_state.window)
-
 			for command, i in state.last_render_commands {
-				fmt.println(command.bounds, command.style)
+				//fmt.println(command.bounds, command.style)
 				renderer.draw_rect(
 					command.bounds,
 					command.style.radius,
@@ -553,8 +512,6 @@ render_proc :: proc(t: ^thread.Thread) {
 			}
 
 			renderer.end_drawing(state.window_state.window)
-
-			glfw.MakeContextCurrent(nil)
 
 			sync.unlock(&state.ui_mutex)
 		}
@@ -599,7 +556,6 @@ insert_ctrl_in_tree :: proc(id: UI_ID) -> (^UI_Ctrl, bool) #optional_ok {
 	ctrl.child_last = nil
 	ctrl.sibling_prev = nil
 	ctrl.sibling_next = nil
-
 	if parent.child_last != nil {
 		parent.child_last.sibling_next = ctrl
 		ctrl.sibling_prev = parent.child_last
@@ -610,19 +566,14 @@ insert_ctrl_in_tree :: proc(id: UI_ID) -> (^UI_Ctrl, bool) #optional_ok {
 	}
 
 	ctrl.parent = parent
-
 	state.parent_ctrl = ctrl
-
 	return ctrl, cached
 }
 
 get_parent_ctrl :: proc(id: UI_ID) -> (parent_ctrl: ^UI_Ctrl, ok: bool) #optional_ok {
 	root := state.root_ctrl
-
 	current_ctrl := root.child_first
-
 	children_checked: bool
-
 	for {
 		if ui_id_match(current_ctrl.id, id) {
 			return current_ctrl, true
@@ -648,7 +599,6 @@ get_parent_ctrl :: proc(id: UI_ID) -> (parent_ctrl: ^UI_Ctrl, ok: bool) #optiona
 
 ui_ctrl_start :: proc(id: UI_ID, flags: UI_Ctrl_Flags, styles: UI_Ctrl_Styles) -> ^UI_Ctrl {
 	ctrl, cached := insert_ctrl_in_tree(id)
-
 	if !cached {
 		//Only assign stuff if the ctrl wasn't cached
 		ctrl.id = id
@@ -694,11 +644,8 @@ ui_toggle_button_end :: proc() {
 
 ui_handle_tree_layout :: proc(ctrl: ^UI_Ctrl) {
 	to_layout := make([dynamic]^UI_Ctrl, allocator = frame_alloc)
-	defer clear(&to_layout)
 	defer delete(to_layout)
-
 	ctrl := ctrl
-
 	for ctrl.sibling_next != nil {
 		append(&to_layout, ctrl)
 		ctrl = ctrl.sibling_next
@@ -720,7 +667,6 @@ ui_handle_tree_layout :: proc(ctrl: ^UI_Ctrl) {
 
 ui_get_ctrl_bounds :: proc(ctrls: [dynamic]^UI_Ctrl) {
 	window_width, window_height := platform.get_window_size()
-
 	layout_direction: UI_Layout_Direction
 
 	parent_bounds: Rectangle
@@ -1086,7 +1032,6 @@ calc_children_width :: proc(ctrl: ^UI_Ctrl) -> f32 {
 
 		child = child.sibling_next
 	}
-
 	return total_size
 }
 

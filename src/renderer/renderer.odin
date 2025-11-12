@@ -10,8 +10,6 @@ import "vendor:glfw"
 GL_MAJOR_VERSION :: 4
 GL_MINOR_VERSION :: 6
 
-window_should_close: bool
-
 WindowError :: enum {
 	NONE,
 	CREATE_ERROR,
@@ -44,6 +42,7 @@ Render_State :: struct {
 	indices_list:  [dynamic]u32,
 }
 
+@(private)
 state: Render_State
 
 init :: proc() {
@@ -54,7 +53,6 @@ init :: proc() {
 }
 
 init_context :: proc() {
-	fmt.println("init_context", glfw.GetCurrentContext())
 	gl.load_up_to(GL_MAJOR_VERSION, GL_MINOR_VERSION, glfw.gl_set_proc_address)
 
 	gl.Enable(gl.BLEND)
@@ -71,14 +69,16 @@ init_context :: proc() {
 
 //Start building layout structure
 begin_drawing :: proc(window: glfw.WindowHandle) {
+	glfw.MakeContextCurrent(window)
+	//Update window dimensions, used for normalising the vertex coords.
+	state.window_width, state.window_height = platform.get_window_size()
 	gl.Clear(gl.COLOR_BUFFER_BIT)
 }
 //Layout build, figure all the positions out
 end_drawing :: proc(window: glfw.WindowHandle) {
 	glfw.PollEvents()
 	glfw.SwapBuffers(window)
-
-	window_should_close = cast(bool)glfw.WindowShouldClose(window)
+	glfw.MakeContextCurrent(nil)
 }
 
 clear_colour :: proc(colour: Colour_RGBA) {
