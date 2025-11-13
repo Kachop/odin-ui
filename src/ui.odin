@@ -50,7 +50,6 @@ Basic controlls to add:
 
 Rectangle :: renderer.Rectangle
 
-clear_colour :: renderer.clear_colour
 set_window_size_limits :: platform.set_window_size_limits
 process_input :: platform.process_input
 get_char :: platform.get_char
@@ -250,8 +249,8 @@ UI_Flags :: enum {
 UI_Ctrl_Flags :: bit_set[UI_Flags]
 
 UI_Focus_State :: enum {
-	Focused,
 	Unfocused,
+	Focused,
 }
 
 UI_Ctrl_State :: enum {
@@ -289,24 +288,34 @@ ui_colour_alpha_from_rgba :: proc(
 }
 
 UI_Ctrl_Styles :: struct {
-	margin:           Edge_Quantity,
-	padding:          Edge_Quantity,
-	bg_colour:        renderer.Colour_RGBA,
-	border_colour:    renderer.Colour_RGBA,
-	border_width:     Edge_Quantity,
-	radius:           [4]f32,
-	sizing:           [2]UI_Size,
-	layout_direction: UI_Layout_Direction,
-	alignment:        UI_Alignment,
-	image_data:       []u8,
-	text:             string,
+	margin:                Edge_Quantity,
+	padding:               Edge_Quantity,
+	bg_colour:             renderer.Colour_RGBA,
+	border_colour:         renderer.Colour_RGBA,
+	regular_bg_colour:     renderer.Colour_RGBA,
+	regular_border_colour: renderer.Colour_RGBA,
+	hovered_bg_colour:     renderer.Colour_RGBA,
+	hovered_border_colour: renderer.Colour_RGBA,
+	active_bg_colour:      renderer.Colour_RGBA,
+	active_border_colour:  renderer.Colour_RGBA,
+	border_width:          Edge_Quantity,
+	radius:                [4]f32,
+	sizing:                [2]UI_Size,
+	layout_direction:      UI_Layout_Direction,
+	alignment:             UI_Alignment,
+	image_data:            []u8,
+	text:                  string,
 }
 
 ui_ctrl_style :: proc(
 	margin: Edge_Quantity = {},
 	padding: Edge_Quantity = {},
-	bg_colour: renderer.Colour_RGBA = {255, 255, 255, 255},
-	border_colour: renderer.Colour_RGBA = {0, 0, 0, 255},
+	regular_bg_colour: renderer.Colour_RGBA = {255, 255, 255, 255},
+	regular_border_colour: renderer.Colour_RGBA = {0, 0, 0, 255},
+	hovered_bg_colour: renderer.Colour_RGBA = {255, 255, 255, 255},
+	hovered_border_colour: renderer.Colour_RGBA = {0, 0, 0, 255},
+	active_bg_colour: renderer.Colour_RGBA = {255, 255, 255, 255},
+	active_border_colour: renderer.Colour_RGBA = {0, 0, 0, 255},
 	border_width: Edge_Quantity = {},
 	radius: [4]f32 = {},
 	sizing: [2]UI_Size = {},
@@ -318,8 +327,14 @@ ui_ctrl_style :: proc(
 	return UI_Ctrl_Styles {
 		margin,
 		padding,
-		bg_colour,
-		border_colour,
+		regular_bg_colour,
+		regular_border_colour,
+		regular_bg_colour,
+		regular_border_colour,
+		hovered_bg_colour,
+		hovered_border_colour,
+		active_bg_colour,
+		active_border_colour,
 		border_width,
 		radius,
 		sizing,
@@ -383,8 +398,8 @@ UI_Ctrl :: struct {
 	flags:              UI_Ctrl_Flags,
 
 	//Persistent state
-	focus_state:        UI_Focus_State,
-	state_flags:        UI_Ctrl_State_Flags,
+	focus_state:        UI_Focus_State, //If it is hovered or not.
+	state_flags:        UI_Ctrl_State_Flags, //State flags, like hovered, active etc.
 
 	//Stuff for scrolling and styling
 	scroll_offset_x:    f32,
@@ -408,6 +423,7 @@ Render_Command :: struct {
 @(private)
 UI_State :: struct {
 	window_state:         ^platform.Window_State,
+	bg_colour:            renderer.Colour_RGBA,
 	rendering:            bool,
 	ui_mutex:             sync.Mutex,
 	render_mutex:         sync.Mutex,
@@ -420,6 +436,10 @@ UI_State :: struct {
 	cursor:               [2]f32,
 	render_commands:      [dynamic]Render_Command,
 	last_render_commands: [dynamic]Render_Command,
+}
+
+clear_colour :: proc(colour: renderer.Colour_RGBA) {
+	state.bg_colour = colour
 }
 
 @(private)
@@ -656,6 +676,21 @@ ui_handle_tree_layout :: proc(ctrl: ^UI_Ctrl) {
 
 	for ctrl in to_layout {
 		append(&state.render_commands, Render_Command{.Rect, ctrl.bounds, ctrl.styles})
+
+		if (.Focusable in ctrl.flags) {
+			if (state.window_state.mouse_pos.x > cast(f64)ctrl.bounds.x) &&
+			   (state.window_state.mouse_pos.x < cast(f64)(ctrl.bounds.x + ctrl.bounds.width)) &&
+			   (state.window_state.mouse_pos.y > cast(f64)ctrl.bounds.y) &&
+			   (state.window_state.mouse_pos.y < cast(f64)(ctrl.bounds.y + ctrl.bounds.height)) {
+				ctrl.focus_state = .Focused
+				ctrl.styles.bg_colour = ctrl.styles.hovered_bg_colour
+				ctrl.styles.border_colour = ctrl.styles.hovered_border_colour
+			} else {
+				ctrl.focus_state = .Unfocused
+				ctrl.styles.bg_colour = ctrl.styles.regular_bg_colour
+				ctrl.styles.border_colour = ctrl.styles.regular_border_colour
+			}
+		}
 		if ctrl.styles.text != "" {
 			//Figure out stuff to do with rendering text, deciding if .Rect or .Text commands should be issued.
 		}
@@ -1079,10 +1114,7 @@ ui_begin :: proc() {
 	state.root_ctrl = nil
 	state.parent_ctrl = nil
 
-	ui_box_start(
-		ui_id("Main container"),
-		ui_ctrl_style(bg_colour = ui_colour_rgba(200, 60, 80, 255)),
-	)
+	ui_box_start(ui_id("Main container"), ui_ctrl_style(regular_bg_colour = state.bg_colour))
 }
 
 ui_end :: proc() {

@@ -77,6 +77,7 @@ begin_drawing :: proc(window: glfw.WindowHandle) {
 //Layout build, figure all the positions out
 end_drawing :: proc(window: glfw.WindowHandle) {
 	glfw.PollEvents()
+	platform.update_mouse_pos()
 	glfw.SwapBuffers(window)
 	glfw.MakeContextCurrent(nil)
 }

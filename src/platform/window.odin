@@ -18,6 +18,7 @@ Window_State :: struct {
 	window:         glfw.WindowHandle,
 	window_width:   f32,
 	window_height:  f32,
+	mouse_pos:      [2]f64,
 	keys_to_update: [dynamic]Keyboard_Key,
 	char_queue:     [dynamic]rune,
 	key_states:     map[Keyboard_Key]Button_State,
@@ -82,6 +83,14 @@ create_window :: proc(width, height: i32, title: cstring) -> (^Window_State, Win
 	glfw.SwapInterval(1)
 
 	return &state, .None
+}
+
+update_mouse_pos :: proc() {
+	state.mouse_pos.x, state.mouse_pos.y = glfw.GetCursorPos(state.window)
+}
+
+get_mouse_pos :: proc() -> (x, y: f64) {
+	return glfw.GetCursorPos(state.window)
 }
 
 set_window_size_limits :: proc(min_width, min_height, max_width, max_height: i32) {

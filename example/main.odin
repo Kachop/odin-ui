@@ -22,14 +22,15 @@ profile_picture := rwb.UI_Ctrl_Styles {
 	sizing    = {rwb.ui_size_grow(), rwb.ui_size_fixed(70, 0.1)},
 }
 
-side_bar_component := rwb.UI_Ctrl_Styles {
-	margin        = rwb.ui_margin_u(16),
-	bg_colour     = {225, 138, 50, 255},
-	border_colour = {0, 0, 0, 255},
-	border_width  = {5, 5, 5, 5},
-	sizing        = {rwb.ui_size_grow(), rwb.ui_size_fixed(50, 0.8)},
-	radius        = {10, 10, 10, 10},
-}
+side_bar_component := rwb.ui_ctrl_style(
+	margin = rwb.ui_margin_u(16),
+	regular_bg_colour = {225, 138, 50, 255},
+	hovered_bg_colour = {138, 255, 50, 255},
+	regular_border_colour = {0, 0, 0, 255},
+	border_width = {5, 5, 5, 5},
+	sizing = {rwb.ui_size_grow(), rwb.ui_size_fixed(50, 0.8)},
+	radius = {10, 10, 10, 10},
+)
 
 main_content := rwb.UI_Ctrl_Styles {
 	margin    = {0, 16, 16, 16},
@@ -83,7 +84,7 @@ test_button :: proc(id: rwb.UI_ID) {
 		rwb.ui_ctrl_style(
 			padding = rwb.ui_padding_all(5),
 			margin = rwb.ui_margin_r(10),
-			bg_colour = rwb.ui_colour_rgba(200, 60, 70, 255),
+			regular_bg_colour = rwb.ui_colour_rgba(200, 60, 70, 255),
 			sizing = {rwb.ui_size_from_children(), rwb.ui_size_fixed(50)},
 		),
 	)
@@ -91,7 +92,7 @@ test_button :: proc(id: rwb.UI_ID) {
 	rwb.ui_box_start(
 		rwb.ui_id(fmt.tprint(id.id_string, "black box")),
 		rwb.ui_ctrl_style(
-			bg_colour = {0, 0, 0, 255},
+			regular_bg_colour = {0, 0, 0, 255},
 			margin = rwb.ui_margin_r(5),
 			radius = {5, 5, 5, 5},
 			sizing = {rwb.ui_size_fixed(100), rwb.ui_size_grow()},
@@ -102,7 +103,7 @@ test_button :: proc(id: rwb.UI_ID) {
 	rwb.ui_box_start(
 		rwb.ui_id(fmt.tprint(id.id_string, "grey box")),
 		rwb.ui_ctrl_style(
-			bg_colour = {150, 150, 150, 255},
+			regular_bg_colour = {150, 150, 150, 255},
 			sizing = {rwb.ui_size_fixed(200), rwb.ui_size_grow()},
 		),
 	)
@@ -114,17 +115,18 @@ test_button :: proc(id: rwb.UI_ID) {
 main_box := rwb.UI_Ctrl_Styles {
 	sizing = {rwb.ui_size_grow(), rwb.ui_size_grow()},
 }
-/*
-gui_button :: proc(style: rwb.Ctrl_Styles) -> bool {
-	focus_state := rwb.button_start(style)
-	rwb.button_end()
+
+gui_button :: proc(id: rwb.UI_ID, style: rwb.UI_Ctrl_Styles) -> bool {
+	focus_state := rwb.ui_button_start(id, style).focus_state
+	rwb.ui_button_end()
 
 	if focus_state == .Focused {
+		fmt.println(id, "focussed.")
 		return true
 	}
 
 	return false
-}*/
+}
 
 main :: proc() {
 	context.allocator = rwb.ui_alloc
@@ -147,6 +149,8 @@ main :: proc() {
 
 	for rwb.render_loop() {
 		rwb.clear_colour(rwb.ui_colour_rgba(250, 250, 250, 255))
+
+		fmt.println(frame)
 
 		rwb.ui_begin()
 
@@ -173,6 +177,8 @@ main :: proc() {
 				rwb.ui_box_start(rwb.ui_idi("Side bar component", i), side_bar_component)
 				rwb.ui_box_end()
 			}
+
+			gui_button(rwb.ui_id("Test button"), side_bar_component)
 
 			rwb.ui_box_end()
 
