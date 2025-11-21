@@ -120,11 +120,6 @@ gui_button :: proc(id: rwb.UI_ID, style: rwb.UI_Ctrl_Styles) -> bool {
 	focus_state := rwb.ui_button_start(id, style).focus_state
 	rwb.ui_button_end()
 
-	if focus_state == .Focused {
-		fmt.println(id, "focussed.")
-		return true
-	}
-
 	return false
 }
 
@@ -150,8 +145,6 @@ main :: proc() {
 	for rwb.render_loop() {
 		rwb.clear_colour(rwb.ui_colour_rgba(250, 250, 250, 255))
 
-		fmt.println(frame)
-
 		rwb.ui_begin()
 
 		{
@@ -173,12 +166,14 @@ main :: proc() {
 			rwb.ui_box_start(rwb.ui_id("Profile pic"), profile_picture)
 			rwb.ui_box_end()
 
-			for i in 0 ..< 6 {
+			for i in 0 ..< 7 {
 				rwb.ui_box_start(rwb.ui_idi("Side bar component", i), side_bar_component)
 				rwb.ui_box_end()
 			}
 
-			gui_button(rwb.ui_id("Test button"), side_bar_component)
+			rwb.ui_button(rwb.ui_id("Test button"), side_bar_component)
+
+			//rwb.ui_toggle_button(rwb.ui_id("Test2 button"), side_bar_component)
 
 			rwb.ui_box_end()
 

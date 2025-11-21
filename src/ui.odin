@@ -492,6 +492,7 @@ create_window :: proc(width, height: i32, title: cstring) -> platform.Window_Err
 
 	platform.set_key_callback(platform.key_callback)
 	platform.set_char_callback(platform.char_callback)
+	platform.set_mouse_button_callback(platform.mouse_button_callback)
 	platform.clear_current_context()
 
 	thread.start(state.render_thread)
@@ -691,6 +692,17 @@ ui_handle_tree_layout :: proc(ctrl: ^UI_Ctrl) {
 				ctrl.styles.border_colour = ctrl.styles.regular_border_colour
 			}
 		}
+
+		if (.Toggleable in ctrl.flags) {
+			if (.Active in ctrl.state_flags) {
+				ctrl.styles.bg_colour = ctrl.styles.active_bg_colour
+				ctrl.styles.border_colour = ctrl.styles.active_border_colour
+			} else {
+				ctrl.styles.bg_colour = ctrl.styles.regular_bg_colour
+				ctrl.styles.border_colour = ctrl.styles.regular_border_colour
+			}
+		}
+
 		if ctrl.styles.text != "" {
 			//Figure out stuff to do with rendering text, deciding if .Rect or .Text commands should be issued.
 		}
@@ -701,7 +713,13 @@ ui_handle_tree_layout :: proc(ctrl: ^UI_Ctrl) {
 }
 
 ui_get_ctrl_bounds :: proc(ctrls: [dynamic]^UI_Ctrl) {
-	window_width, window_height := platform.get_window_size()
+	//TODO: Figure out if a container needs to be scrollable.
+	//		If the children cannot be fit in make the parent scrollable.
+	//		For already scrollable containers, calculate the bounds normally, and
+	//		When displaying the container it should do a scissor and use the ctrls 
+	//		Scroll properties to figure out what to render.
+	window_width, window_height :=
+		state.window_state.window_width, state.window_state.window_height
 	layout_direction: UI_Layout_Direction
 
 	parent_bounds: Rectangle

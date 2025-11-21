@@ -11,6 +11,11 @@ Button_State :: enum {
 	Released,
 }
 
+Input :: union {
+	Mouse_Button,
+	Keyboard_Key,
+}
+
 Mouse_Button :: enum i32 {
 	Left   = glfw.MOUSE_BUTTON_LEFT,
 	Right  = glfw.MOUSE_BUTTON_RIGHT,
@@ -70,6 +75,13 @@ process_input :: proc() {
 		}
 	}
 
+	for button, i in state.mouse_buttons_to_update {
+		update_mouse_button_state(button)
+		if state.mouse_button_states[button] == Button_State.Up {
+			ordered_remove(&state.mouse_buttons_to_update, i)
+		}
+	}
+
 	if is_key_pressed(.ESC) {
 		glfw.SetWindowShouldClose(state.window, true)
 	}
@@ -83,6 +95,13 @@ key_callback :: proc "c" (window: glfw.WindowHandle, key, scancode, action, mods
 	context = runtime.default_context()
 	if action == glfw.PRESS {
 		append(&state.keys_to_update, cast(Keyboard_Key)key)
+	}
+}
+
+mouse_button_callback :: proc "c" (window: glfw.WindowHandle, button, action, mods: i32) {
+	context = runtime.default_context()
+	if action == glfw.PRESS {
+		append(&state.mouse_buttons_to_update, cast(Mouse_Button)button)
 	}
 }
 
@@ -130,6 +149,47 @@ is_key_pressed :: proc(key: Keyboard_Key) -> bool {
 
 is_key_released :: proc(key: Keyboard_Key) -> bool {
 	return state.key_states[key] == Button_State.Released
+}
+
+update_mouse_button_state :: proc(button: Mouse_Button) {
+	current_button_state := glfw.GetMouseButton(state.window, cast(i32)button)
+
+	switch current_button_state {
+	case glfw.PRESS:
+		if state.mouse_button_states[button] == Button_State.Pressed {
+			state.mouse_button_states[button] = Button_State.Down
+			return
+		} else if state.mouse_button_states[button] != Button_State.Down {
+			state.mouse_button_states[button] = Button_State.Pressed
+		}
+		return
+	case glfw.RELEASE:
+		if state.mouse_button_states[button] == Button_State.Pressed ||
+		   state.mouse_button_states[button] == Button_State.Down {
+			state.mouse_button_states[button] = Button_State.Released
+			return
+		}
+		if state.mouse_button_states[button] == Button_State.Released {
+			state.mouse_button_states[button] = Button_State.Up
+			return
+		}
+	}
+}
+
+is_mouse_button_up :: proc(button: Mouse_Button) -> bool {
+	return state.mouse_button_states[button] == Button_State.Up
+}
+
+is_mouse_button_down :: proc(button: Mouse_Button) -> bool {
+	return state.mouse_button_states[button] == Button_State.Down
+}
+
+is_mouse_button_pressed :: proc(button: Mouse_Button) -> bool {
+	return state.mouse_button_states[button] == Button_State.Pressed
+}
+
+is_mouse_button_released :: proc(button: Mouse_Button) -> bool {
+	return state.mouse_button_states[button] == Button_State.Released
 }
 
 get_char :: proc() -> (char: rune, ok: bool) {

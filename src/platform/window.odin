@@ -14,14 +14,16 @@ Window_Error :: enum {
 }
 
 Window_State :: struct {
-	initialised:    bool,
-	window:         glfw.WindowHandle,
-	window_width:   f32,
-	window_height:  f32,
-	mouse_pos:      [2]f64,
-	keys_to_update: [dynamic]Keyboard_Key,
-	char_queue:     [dynamic]rune,
-	key_states:     map[Keyboard_Key]Button_State,
+	initialised:             bool,
+	window:                  glfw.WindowHandle,
+	window_width:            f32,
+	window_height:           f32,
+	mouse_pos:               [2]f64,
+	keys_to_update:          [dynamic]Keyboard_Key,
+	char_queue:              [dynamic]rune,
+	key_states:              map[Keyboard_Key]Button_State,
+	mouse_buttons_to_update: [dynamic]Mouse_Button,
+	mouse_button_states:     map[Mouse_Button]Button_State,
 }
 
 @(private)
@@ -39,8 +41,10 @@ init :: proc() -> bool {
 	state.initialised = true
 	state.keys_to_update = make([dynamic]Keyboard_Key, context.allocator)
 	state.char_queue = make([dynamic]rune, context.allocator)
+	state.mouse_buttons_to_update = make([dynamic]Mouse_Button, context.allocator)
 
 	state.key_states = make(map[Keyboard_Key]Button_State, context.allocator)
+	state.mouse_button_states = make(map[Mouse_Button]Button_State, context.allocator)
 
 	glfw.InitHint(glfw.WAYLAND_LIBDECOR, glfw.WAYLAND_DISABLE_LIBDECOR)
 
@@ -121,6 +125,10 @@ set_error_callback :: proc(callback: proc "c" (_: i32, _: cstring)) {
 
 set_key_callback :: proc(callback: proc "c" (_: glfw.WindowHandle, _, _, _, _: i32)) {
 	glfw.SetKeyCallback(state.window, callback)
+}
+
+set_mouse_button_callback :: proc(callback: proc "c" (_: glfw.WindowHandle, _, _, _: i32)) {
+	glfw.SetMouseButtonCallback(state.window, callback)
 }
 
 set_char_callback :: proc(callback: proc "c" (_: glfw.WindowHandle, char: rune)) {
