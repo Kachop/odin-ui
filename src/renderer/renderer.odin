@@ -70,6 +70,7 @@ init_context :: proc() {
 //Start building layout structure
 begin_drawing :: proc(window: glfw.WindowHandle) {
 	glfw.MakeContextCurrent(window)
+	glfw.PollEvents()
 	//Update window dimensions, used for normalising the vertex coords.
 	state.window_width, state.window_height = platform.get_window_size()
 	gl.Clear(gl.COLOR_BUFFER_BIT)

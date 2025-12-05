@@ -1,5 +1,3 @@
-#+feature dynamic-literals
-
 package rwb
 
 import "base:runtime"
@@ -354,7 +352,6 @@ UI_ID :: struct {
 //Creates an ID based on a string
 ui_id :: proc(identifier: string) -> UI_ID {
 	context.allocator = frame_alloc
-	defer context.allocator = ui_alloc
 	return UI_ID {
 		identifier,
 		0,
@@ -365,7 +362,6 @@ ui_id :: proc(identifier: string) -> UI_ID {
 //Creates an ID based on a string and a loop iteration
 ui_idi :: proc(identifier: string, iteration: int) -> UI_ID {
 	context.allocator = frame_alloc
-	defer context.allocator = ui_alloc
 	id_i := fmt.tprint(identifier, iteration, sep = "")
 	return UI_ID {
 		identifier,
@@ -434,8 +430,8 @@ UI_State :: struct {
 	cached_ctrls:         map[string]^UI_Ctrl,
 	frame_idx:            u64,
 	cursor:               [2]f32,
-	render_commands:      [dynamic]Render_Command,
-	last_render_commands: [dynamic]Render_Command,
+	render_commands:      Dynamic_Slice(Render_Command),
+	last_render_commands: Dynamic_Slice(Render_Command),
 }
 
 clear_colour :: proc(colour: renderer.Colour_RGBA) {
@@ -469,10 +465,11 @@ init :: proc "contextless" () {
 	platform.init()
 	renderer.init()
 
-	state.cached_ctrls = make(map[string]^UI_Ctrl, allocator = cache_alloc)
+	state.cached_ctrls = make(map[string]^UI_Ctrl, 4096, allocator = cache_alloc)
 	//platform.state.keys_to_update = make([dynamic]platform.Keyboard_Key, allocator = ui_alloc)
 	//platform.state.char_queue = make([dynamic]rune, allocator = tree_alloc)
-	state.render_commands = make([dynamic]Render_Command, allocator = tree_alloc)
+	state.render_commands = make_dynamic_slice(Render_Command, 4096, allocator = ui_alloc)
+	state.last_render_commands = make_dynamic_slice(Render_Command, 4096, allocator = ui_alloc)
 
 	state.render_thread = thread.create(render_proc)
 }
@@ -512,6 +509,33 @@ render_loop :: proc() -> bool {
 	//Do stuff here which needs doing every frame
 	state.frame_idx += 1
 
+	when ODIN_DEBUG {
+		fmt.println(
+			"UI Arena | Reserved:",
+			ui_arena.total_reserved,
+			", Used:",
+			ui_arena.total_used,
+		)
+		fmt.println(
+			"Frame Arena | Reserved:",
+			frame_arena.total_reserved,
+			", Used:",
+			frame_arena.total_used,
+		)
+		fmt.println(
+			"Tree Arena | Reserved:",
+			tree_arena.total_reserved,
+			", Used:",
+			tree_arena.total_used,
+		)
+		fmt.println(
+			"Cache Arena | Reserved:",
+			cache_arena.total_reserved,
+			", Used:",
+			cache_arena.total_used,
+		)
+	}
+
 	return true
 }
 
@@ -521,7 +545,7 @@ render_proc :: proc(t: ^thread.Thread) {
 			//Check if new tree is being built
 			sync.lock(&state.render_mutex)
 			renderer.begin_drawing(state.window_state.window)
-			for command, i in state.last_render_commands {
+			for command, i in to_slice(&state.last_render_commands) {
 				//fmt.println(command.bounds, command.style)
 				renderer.draw_rect(
 					command.bounds,
@@ -664,19 +688,21 @@ ui_toggle_button_end :: proc() {
 }
 
 ui_handle_tree_layout :: proc(ctrl: ^UI_Ctrl) {
-	to_layout := make([dynamic]^UI_Ctrl, allocator = frame_alloc)
-	defer delete(to_layout)
+	to_layout := make_dynamic_slice(^UI_Ctrl, 4096, allocator = frame_alloc)
 	ctrl := ctrl
 	for ctrl.sibling_next != nil {
-		append(&to_layout, ctrl)
+		append_dynamic_slice(&to_layout, ctrl)
 		ctrl = ctrl.sibling_next
 	}
-	append(&to_layout, ctrl)
+	append_dynamic_slice(&to_layout, ctrl)
 
 	ui_get_ctrl_bounds(to_layout)
 
-	for ctrl in to_layout {
-		append(&state.render_commands, Render_Command{.Rect, ctrl.bounds, ctrl.styles})
+	for ctrl in to_slice(&to_layout) {
+		append_dynamic_slice(
+			&state.render_commands,
+			Render_Command{.Rect, ctrl.bounds, ctrl.styles},
+		)
 
 		if (.Focusable in ctrl.flags) {
 			if (state.window_state.mouse_pos.x > cast(f64)ctrl.bounds.x) &&
@@ -712,12 +738,13 @@ ui_handle_tree_layout :: proc(ctrl: ^UI_Ctrl) {
 	}
 }
 
-ui_get_ctrl_bounds :: proc(ctrls: [dynamic]^UI_Ctrl) {
+ui_get_ctrl_bounds :: proc(ctrls: Dynamic_Slice(^UI_Ctrl)) {
 	//TODO: Figure out if a container needs to be scrollable.
 	//		If the children cannot be fit in make the parent scrollable.
 	//		For already scrollable containers, calculate the bounds normally, and
 	//		When displaying the container it should do a scissor and use the ctrls 
 	//		Scroll properties to figure out what to render.
+	ctrls := ctrls
 	window_width, window_height :=
 		state.window_state.window_width, state.window_state.window_height
 	layout_direction: UI_Layout_Direction
@@ -727,11 +754,11 @@ ui_get_ctrl_bounds :: proc(ctrls: [dynamic]^UI_Ctrl) {
 
 	violation_checking := true
 
-	if ctrls[0].parent != nil {
-		parent_bounds = ctrls[0].parent.bounds
-		parent_padding = ctrls[0].parent.styles.padding
+	if get(ctrls, 0).parent != nil {
+		parent_bounds = get(ctrls, 0).parent.bounds
+		parent_padding = get(ctrls, 0).parent.styles.padding
 
-		layout_direction = ctrls[0].parent.styles.layout_direction
+		layout_direction = get(ctrls, 0).parent.styles.layout_direction
 
 		state.cursor = {parent_bounds.x + parent_padding.l, parent_bounds.y + parent_padding.u}
 	} else {
@@ -740,13 +767,13 @@ ui_get_ctrl_bounds :: proc(ctrls: [dynamic]^UI_Ctrl) {
 		violation_checking = false
 	}
 
-	immediate_list := make([dynamic]^UI_Ctrl, allocator = frame_alloc)
-	deferred_list := make([dynamic]^UI_Ctrl, allocator = frame_alloc) //List for .Grow elements so their size can be calculated last
+	immediate_list := make_dynamic_slice(^UI_Ctrl, 4096, allocator = frame_alloc)
+	deferred_list := make_dynamic_slice(^UI_Ctrl, 4096, allocator = frame_alloc) //List for .Grow elements so their size can be calculated last
 
 	available_width := parent_bounds.width - parent_padding.l - parent_padding.r
 	available_height := parent_bounds.height - parent_padding.u - parent_padding.d
 
-	for ctrl in ctrls {
+	for ctrl in to_slice(&ctrls) {
 		switch layout_direction {
 		case .Left_To_Right, .Right_To_Left:
 			available_width -= (ctrl.styles.margin.l + ctrl.styles.margin.r)
@@ -758,7 +785,7 @@ ui_get_ctrl_bounds :: proc(ctrls: [dynamic]^UI_Ctrl) {
 	current_available_width := available_width
 	current_available_height := available_height
 
-	for ctrl in ctrls {
+	for ctrl in to_slice(&ctrls) {
 		size_hint: UI_Size_Hint
 
 		switch layout_direction {
@@ -769,40 +796,38 @@ ui_get_ctrl_bounds :: proc(ctrls: [dynamic]^UI_Ctrl) {
 		}
 
 		if size_hint == .Grow_To_Parent {
-			append(&deferred_list, ctrl)
+			append_dynamic_slice(&deferred_list, ctrl)
 		} else {
-			append(&immediate_list, ctrl)
+			append_dynamic_slice(&immediate_list, ctrl)
 		}
 	}
 
-	for ctrl in immediate_list {
+	for ctrl in to_slice(&immediate_list) {
 		calc_ctrl_size(
 			ctrl,
 			available_width,
 			available_height,
 			&current_available_width,
 			&current_available_height,
-			cast(f32)len(deferred_list),
+			cast(f32)dynamic_slice_len(deferred_list),
 		)
 	}
 
-	for ctrl in deferred_list {
+	for ctrl in to_slice(&deferred_list) {
 		calc_ctrl_size(
 			ctrl,
 			available_width,
 			available_height,
 			&current_available_width,
 			&current_available_height,
-			cast(f32)len(deferred_list),
+			cast(f32)dynamic_slice_len(deferred_list),
 		)
 	}
 
-	clear(&immediate_list)
-	clear(&deferred_list)
-	delete(immediate_list)
-	delete(deferred_list)
+	clear_dynamic_slice(&immediate_list)
+	clear_dynamic_slice(&deferred_list)
 
-	for ctrl in ctrls {
+	for ctrl in to_slice(&ctrls) {
 		calc_ctrl_pos(ctrl)
 	}
 
@@ -810,21 +835,17 @@ ui_get_ctrl_bounds :: proc(ctrls: [dynamic]^UI_Ctrl) {
 
 	//Check for size violations
 	total_overspill: [2]f32
-	flexible_x_ctrls := make([dynamic]^UI_Ctrl, allocator = frame_alloc) //Number of non-1 strictness x ctrls.
-	defer clear(&flexible_x_ctrls)
-	defer delete(flexible_x_ctrls)
-	flexible_y_ctrls := make([dynamic]^UI_Ctrl, allocator = frame_alloc) //Number of non-1 strictness y ctrls.
-	defer clear(&flexible_y_ctrls)
-	defer delete(flexible_y_ctrls)
+	flexible_x_ctrls := make_dynamic_slice(^UI_Ctrl, 4096, allocator = frame_alloc) //Number of non-1 strictness x ctrls.
+	flexible_y_ctrls := make_dynamic_slice(^UI_Ctrl, 4096, allocator = frame_alloc) //Number of non-1 strictness y ctrls.
 
 	if violation_checking {
-		for ctrl in ctrls {
+		for ctrl in to_slice(&ctrls) {
 			//In case there are violations these ctrls can be resized easily to try fix the issues
 			if ctrl.styles.sizing.x.strictness < 1 {
-				append(&flexible_x_ctrls, ctrl)
+				append_dynamic_slice(&flexible_x_ctrls, ctrl)
 			}
 			if ctrl.styles.sizing.y.strictness < 1 {
-				append(&flexible_y_ctrls, ctrl)
+				append_dynamic_slice(&flexible_y_ctrls, ctrl)
 			}
 
 			if ctrl.bounds.x < ctrl.parent.bounds.x + ctrl.parent.styles.padding.l {
@@ -865,15 +886,15 @@ ui_get_ctrl_bounds :: proc(ctrls: [dynamic]^UI_Ctrl) {
 		//fmt.println("x overspill in", ctrls[0].parent.id.id_string, "by", total_overspill.x)
 		//Check if any of the controls have non-1 strictness.
 		//If so reduce all of their sizes proportionally to remove the overspill.
-		if len(flexible_x_ctrls) > 0 {
+		if dynamic_slice_len(flexible_x_ctrls) > 0 {
 			denominator: f32
-			for ctrl in flexible_x_ctrls {
+			for ctrl in to_slice(&flexible_x_ctrls) {
 				denominator += (1 - ctrl.styles.sizing.x.strictness) * ctrl.bounds.width
 			}
 
 			proportion := total_overspill.x / denominator
 
-			for ctrl in flexible_x_ctrls {
+			for ctrl in to_slice(&flexible_x_ctrls) {
 				ctrl.bounds.width /= ((1 - ctrl.styles.sizing.x.strictness) * proportion)
 			}
 		} else {
@@ -884,9 +905,9 @@ ui_get_ctrl_bounds :: proc(ctrls: [dynamic]^UI_Ctrl) {
 	if total_overspill.y > 0 {
 		//fmt.println("y overspill in", ctrls[0].parent.id.id_string, "by", total_overspill.y)
 		//If so reduce all of their sizes proportionally to remove the overspill.
-		if len(flexible_y_ctrls) > 0 {
+		if dynamic_slice_len(flexible_y_ctrls) > 0 {
 			denominator: f32
-			for ctrl in flexible_y_ctrls {
+			for ctrl in to_slice(&flexible_y_ctrls) {
 				denominator += (1 - ctrl.styles.sizing.y.strictness) * ctrl.bounds.height
 			}
 
@@ -899,7 +920,7 @@ ui_get_ctrl_bounds :: proc(ctrls: [dynamic]^UI_Ctrl) {
 			}
 			//fmt.println("propotion:", proportion)
 
-			for ctrl in flexible_y_ctrls {
+			for ctrl in to_slice(&flexible_y_ctrls) {
 				//fmt.println(ctrl.id.id_string, ctrl.bounds.height)
 				ctrl.bounds.height -=
 					((1 - ctrl.styles.sizing.y.strictness) * proportion * ctrl.bounds.height)
@@ -912,7 +933,7 @@ ui_get_ctrl_bounds :: proc(ctrls: [dynamic]^UI_Ctrl) {
 
 	if total_overspill.x > 0 || total_overspill.y > 0 {
 		state.cursor = {parent_bounds.x + parent_padding.l, parent_bounds.y + parent_padding.u}
-		for ctrl in ctrls {
+		for ctrl in to_slice(&ctrls) {
 			calc_ctrl_pos(ctrl)
 		}
 	}
@@ -1154,11 +1175,10 @@ ui_end :: proc() {
 
 	sync.lock(&state.ui_mutex)
 
-	temp_commands := new([dynamic]Render_Command, allocator = frame_alloc)
-	temp_commands^ = state.render_commands
-	clear(&state.last_render_commands)
-	state.last_render_commands = temp_commands^
-	clear(&state.render_commands)
+	clear_dynamic_slice(&state.last_render_commands)
+	dynamic_slice_copy(&state.last_render_commands, &state.render_commands)
+
+	clear_dynamic_slice(&state.render_commands)
 
 	sync.unlock(&state.render_mutex)
 

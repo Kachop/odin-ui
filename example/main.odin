@@ -173,7 +173,7 @@ main :: proc() {
 
 			rwb.ui_button(rwb.ui_id("Test button"), side_bar_component)
 
-			//rwb.ui_toggle_button(rwb.ui_id("Test2 button"), side_bar_component)
+			rwb.ui_toggle_button(rwb.ui_id("Test2 button"), side_bar_component)
 
 			rwb.ui_box_end()
 
@@ -199,43 +199,10 @@ main :: proc() {
 
 			rwb.ui_box_end()
 
-			//fmt.println("fps:", frame / time.duration_seconds(time.stopwatch_duration(timer)))
+			fmt.println("fps:", frame / time.duration_seconds(time.stopwatch_duration(timer)))
 			frame += 1
 		}
 		/*
-		fmt.println(
-			"UI Arena | Reserved:",
-			rwb.ui_arena.total_reserved,
-			", Used:",
-			rwb.ui_arena.total_used,
-		)
-		fmt.println(
-			"Frame Arena | Reserved:",
-			rwb.frame_arena.total_reserved,
-			", Used:",
-			rwb.frame_arena.total_used,
-		)
-		fmt.println(
-			"Tree Arena | Reserved:",
-			rwb.tree_arena.total_reserved,
-			", Used:",
-			rwb.tree_arena.total_used,
-		)
-		fmt.println(
-			"Cache Arena | Reserved:",
-			rwb.cache_arena.total_reserved,
-			", Used:",
-			rwb.cache_arena.total_used,
-		)
-
-		fmt.println(
-			rwb.is_mouse_button_down(.Left),
-			"|",
-			rwb.is_mouse_button_down(.Right),
-			"|",
-			rwb.is_mouse_button_down(.Middle),
-		)
-
 		fmt.println(rwb.is_key_pressed(.A))
 */
 		rwb.ui_end()

@@ -1,5 +1,8 @@
 # Plan for UI lib development
 
+## TODOs
+> 1. Remove any unnecessary dynamic allocations.
+
 ## Model
 
 > 1. Handle input. (Hover logic and clicking uses previous frames tree).
