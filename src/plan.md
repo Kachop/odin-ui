@@ -2,6 +2,15 @@
 
 ## TODOs
 > 1. Remove any unnecessary dynamic allocations.
+> 2. If layout overspills and all of the elements have already been reduced to their minumum then proportionally reduce everything.
+
+Issues with overspills. If .Grow_To_Parent element present with no space to go things get wacky.
+
+Ideal process for fixing overspills:
+
+> 1. Reduce the size of all flexible containers to their minimum.
+> 2. Calculate the remaining overspill.
+> 3. Reduce everything available so it all fits onto the screen.
 
 ## Model
 

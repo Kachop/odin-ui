@@ -836,74 +836,134 @@ ui_get_ctrl_bounds :: proc(ctrls: Dynamic_Slice(^UI_Ctrl)) {
 	//Check for size violations
 	total_overspill: [2]f32
 	flexible_x_ctrls := make_dynamic_slice(^UI_Ctrl, 4096, allocator = frame_alloc) //Number of non-1 strictness x ctrls.
+	static_x_ctrls := make_dynamic_slice(^UI_Ctrl, 4096, allocator = frame_alloc)
 	flexible_y_ctrls := make_dynamic_slice(^UI_Ctrl, 4096, allocator = frame_alloc) //Number of non-1 strictness y ctrls.
+	static_y_ctrls := make_dynamic_slice(^UI_Ctrl, 4096, allocator = frame_alloc)
 
 	if violation_checking {
 		for ctrl in to_slice(&ctrls) {
 			//In case there are violations these ctrls can be resized easily to try fix the issues
-			if ctrl.styles.sizing.x.strictness < 1 {
-				append_dynamic_slice(&flexible_x_ctrls, ctrl)
-			}
-			if ctrl.styles.sizing.y.strictness < 1 {
-				append_dynamic_slice(&flexible_y_ctrls, ctrl)
+			if ctrl.bounds.width > 0 {
+				if ctrl.styles.sizing.x.strictness < 1 {
+					append_dynamic_slice(&flexible_x_ctrls, ctrl)
+				} else {
+					append_dynamic_slice(&static_x_ctrls, ctrl)
+				}
+
+				if ctrl.bounds.x < ctrl.parent.bounds.x + ctrl.parent.styles.padding.l {
+					//Overspilling to the left
+					total_overspill.x =
+						(ctrl.parent.bounds.x + ctrl.parent.styles.padding.l - ctrl.bounds.x)
+				}
+
+				if ctrl.bounds.x + ctrl.bounds.width + ctrl.styles.margin.r >
+				   ctrl.parent.bounds.x + ctrl.parent.bounds.width - ctrl.parent.styles.padding.r {
+					//Overspill to the right
+					total_overspill.x =
+						((ctrl.bounds.x + ctrl.bounds.width + ctrl.styles.margin.r) -
+							(ctrl.parent.bounds.x +
+									ctrl.parent.bounds.width -
+									ctrl.parent.styles.padding.r))
+				}
 			}
 
-			if ctrl.bounds.x < ctrl.parent.bounds.x + ctrl.parent.styles.padding.l {
-				//Overspilling to the left
-				total_overspill.x +=
-					(ctrl.parent.bounds.x + ctrl.parent.styles.padding.l - ctrl.bounds.x)
-			}
+			if ctrl.bounds.height > 0 {
+				if ctrl.styles.sizing.y.strictness < 1 {
+					append_dynamic_slice(&flexible_y_ctrls, ctrl)
+				} else {
+					append_dynamic_slice(&static_y_ctrls, ctrl)
+				}
 
-			if ctrl.bounds.x + ctrl.bounds.width + ctrl.styles.margin.r >
-			   ctrl.parent.bounds.x + ctrl.parent.bounds.width - ctrl.parent.styles.padding.r {
-				//Overspill to the right
-				total_overspill.x +=
-					((ctrl.bounds.x + ctrl.bounds.width + ctrl.styles.margin.r) -
-						(ctrl.parent.bounds.x +
-								ctrl.parent.bounds.width -
-								ctrl.parent.styles.padding.r))
-			}
+				if ctrl.bounds.y < ctrl.parent.bounds.y + ctrl.parent.styles.padding.u {
+					//Overspill above
+					total_overspill.y =
+						(ctrl.parent.bounds.y + ctrl.parent.styles.padding.u - ctrl.bounds.y)
+				}
 
-			if ctrl.bounds.y < ctrl.parent.bounds.y + ctrl.parent.styles.padding.u {
-				//Overspill above
-				total_overspill.y +=
-					(ctrl.parent.bounds.y + ctrl.parent.styles.padding.u - ctrl.bounds.y)
-			}
-
-			if ctrl.bounds.y + ctrl.bounds.height + ctrl.styles.margin.d >
-			   ctrl.parent.bounds.y + ctrl.parent.bounds.height - ctrl.parent.styles.padding.d {
-				//Overspill below
-				total_overspill.y +=
-					((ctrl.bounds.y + ctrl.bounds.height + ctrl.parent.styles.margin.d) -
-						(ctrl.parent.bounds.y +
-								ctrl.parent.bounds.height -
-								ctrl.parent.styles.padding.d))
+				if ctrl.bounds.y + ctrl.bounds.height + ctrl.styles.margin.d >
+				   ctrl.parent.bounds.y +
+					   ctrl.parent.bounds.height -
+					   ctrl.parent.styles.padding.d {
+					//Overspill below
+					total_overspill.y =
+						((ctrl.bounds.y + ctrl.bounds.height + ctrl.parent.styles.margin.d) -
+							(ctrl.parent.bounds.y +
+									ctrl.parent.bounds.height -
+									ctrl.parent.styles.padding.d))
+				}
 			}
 		}
 	}
 
 	if total_overspill.x > 0 {
-		//fmt.println("x overspill in", ctrls[0].parent.id.id_string, "by", total_overspill.x)
+		fmt.println("x overspill in", ctrls.data[0].parent.id.id_string, "by", total_overspill.x)
 		//Check if any of the controls have non-1 strictness.
 		//If so reduce all of their sizes proportionally to remove the overspill.
 		if dynamic_slice_len(flexible_x_ctrls) > 0 {
 			denominator: f32
+			fmt.println("flexible controls:", dynamic_slice_len(flexible_x_ctrls))
 			for ctrl in to_slice(&flexible_x_ctrls) {
 				denominator += (1 - ctrl.styles.sizing.x.strictness) * ctrl.bounds.width
+				fmt.println(ctrl.id.id_string, "width:", ctrl.bounds.width)
 			}
 
+			fmt.println("denominator:", denominator)
+
 			proportion := total_overspill.x / denominator
+			fmt.println("Proportion:", proportion)
 
 			for ctrl in to_slice(&flexible_x_ctrls) {
 				ctrl.bounds.width /= ((1 - ctrl.styles.sizing.x.strictness) * proportion)
 			}
-		} else {
-			//No flexible ctrls. Either force smaller or add scrolling.
+		}
+
+		//Check if there's still an overspill, if so force all controls to shrink.
+		total_overspill.x = 0
+		//topological_sort
+		for ctrl in to_slice(&ctrls) {
+			if ctrl.bounds.x > 0 {
+				if ctrl.bounds.x < ctrl.parent.bounds.x + ctrl.parent.styles.padding.l {
+					//Overspilling to the left
+					total_overspill.x +=
+						(ctrl.parent.bounds.x + ctrl.parent.styles.padding.l - ctrl.bounds.x)
+				}
+
+				if ctrl.bounds.x + ctrl.bounds.width + ctrl.styles.margin.r >
+				   ctrl.parent.bounds.x + ctrl.parent.bounds.width - ctrl.parent.styles.padding.r {
+					//Overspill to the right
+					total_overspill.x =
+						((ctrl.bounds.x + ctrl.bounds.width + ctrl.styles.margin.r) -
+							(ctrl.parent.bounds.x +
+									ctrl.parent.bounds.width -
+									ctrl.parent.styles.padding.r))
+				}
+			}
+		}
+
+		if total_overspill.x > 0 {
+			//Still and overspill, reduce everything.
+			fmt.println("Still an overspill of:", total_overspill.x)
+
+			total_width: f32
+			for ctrl in to_slice(&ctrls) {
+				if (ctrl.bounds.width > 0) {
+					total_width += ctrl.bounds.width + ctrl.styles.margin.l + ctrl.styles.margin.r
+				}
+			}
+
+			percentage: f32
+			for ctrl in to_slice(&ctrls) {
+				if ctrl.bounds.width > 0 {
+					percentage = ctrl.bounds.width / total_width
+					ctrl.bounds.width -= total_overspill.x * percentage
+					fmt.println(ctrl.id.id_string, "percentage:", percentage)
+				}
+			}
 		}
 	}
 
 	if total_overspill.y > 0 {
-		//fmt.println("y overspill in", ctrls[0].parent.id.id_string, "by", total_overspill.y)
+		fmt.println("y overspill in", ctrls.data[0].parent.id.id_string, "by", total_overspill.y)
 		//If so reduce all of their sizes proportionally to remove the overspill.
 		if dynamic_slice_len(flexible_y_ctrls) > 0 {
 			denominator: f32
@@ -972,6 +1032,7 @@ calc_ctrl_size :: proc(
 			curr_available_width^ -= ctrl.bounds.width
 		//Deferred cases	
 		case .Grow_To_Parent:
+			//Grow_To_Parent containers will not be rendered if there is no room.
 			ctrl.bounds.width = curr_available_width^ / no_of_growers
 		case .Grow_From_Children:
 			ctrl.bounds.width = calc_children_width(ctrl)
@@ -993,6 +1054,10 @@ calc_ctrl_size :: proc(
 			ctrl.bounds.height = calc_children_height(ctrl)
 		}
 
+		if (curr_available_width^ < 0) {
+			curr_available_width^ = 0
+		}
+
 	case .Top_To_Bottom, .Bottom_To_Top:
 		//Calculate all widths, then go in order of controls to calculate x positions.	
 		switch ctrl.styles.sizing.y.size_hint {
@@ -1012,6 +1077,10 @@ calc_ctrl_size :: proc(
 		case .Grow_From_Children:
 			ctrl.bounds.height = calc_children_height(ctrl)
 			curr_available_height^ -= ctrl.bounds.height
+		}
+
+		if (curr_available_height^ < 0) {
+			curr_available_height^ = 0
 		}
 
 		switch ctrl.styles.sizing.x.size_hint {
