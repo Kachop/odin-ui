@@ -128,6 +128,8 @@ main :: proc() {
 	context.temp_allocator = rwb.frame_alloc
 	//Boilerplater setup
 
+	rwb.load_font("/mnt/Guido/Development/Odin/RWB-UI/src/fonts/paul-font/paul_font.ttf")
+
 	err := rwb.create_window(800, 600, "Example")
 
 	if err != .None {
