@@ -60,8 +60,10 @@ init_context :: proc() {
 
 	create_shader_program(
 		.Rect,
-		"/mnt/Guido/Development/Odin/RWB-UI/src/renderer/shaders/rec.vs",
-		"/mnt/Guido/Development/Odin/RWB-UI/src/renderer/shaders/rec.fs",
+		//"/mnt/Guido/Development/Odin/RWB-UI/src/renderer/shaders/rec.vs",
+		//"/mnt/Guido/Development/Odin/RWB-UI/src/renderer/shaders/rec.fs",
+		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec.vs",
+		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec.fs",
 	)
 
 	use_shader_program(state.shaders[.Rect])
