@@ -148,8 +148,9 @@ main :: proc() {
 		rwb.clear_colour(rwb.ui_colour_rgba(250, 250, 250, 255))
 
 		rwb.ui_begin()
-
+		///*
 		{
+
 			for char, ok := rwb.get_char(); ok; char, ok = rwb.get_char() {
 				fmt.print(char)
 			}
@@ -202,13 +203,20 @@ main :: proc() {
 			rwb.ui_box_end()
 
 			fmt.println("fps:", frame / time.duration_seconds(time.stopwatch_duration(timer)))
+
+			rwb.draw_point(400, 300, 5)
+
 			frame += 1
 		}
+		//*/
 		/*
 		fmt.println(rwb.is_key_pressed(.A))
-*/
+		*/
+
 		rwb.ui_end()
+
 	}
+
 
 	rwb.close_window()
 }

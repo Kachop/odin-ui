@@ -48,6 +48,24 @@ Basic controlls to add:
 
 Rectangle :: renderer.Rectangle
 
+draw_point :: proc(x, y, radius: f32) {
+	append_dynamic_slice(
+		&state.non_tree_render_commands,
+		Render_Command {
+			.Text,
+			{x, y, 0, 0},
+			ui_ctrl_style(radius = {radius, radius, radius, radius}),
+		},
+	)
+}
+
+freestyle_rect :: proc(x, y, width, height: f32) {
+	append_dynamic_slice_back(
+		&state.last_render_commands,
+		Render_Command{.Text, {x, y, width, height}, ui_ctrl_style()},
+	)
+}
+
 set_window_size_limits :: platform.set_window_size_limits
 process_input :: platform.process_input
 get_char :: platform.get_char
@@ -418,20 +436,21 @@ Render_Command :: struct {
 
 @(private)
 UI_State :: struct {
-	window_state:         ^platform.Window_State,
-	bg_colour:            renderer.Colour_RGBA,
-	rendering:            bool,
-	ui_mutex:             sync.Mutex,
-	render_mutex:         sync.Mutex,
-	render_thread:        ^thread.Thread,
-	root_ctrl:            ^UI_Ctrl,
-	parent_ctrl:          ^UI_Ctrl,
-	previous_sibling:     ^UI_Ctrl,
-	cached_ctrls:         map[string]^UI_Ctrl,
-	frame_idx:            u64,
-	cursor:               [2]f32,
-	render_commands:      Dynamic_Slice(Render_Command),
-	last_render_commands: Dynamic_Slice(Render_Command),
+	window_state:             ^platform.Window_State,
+	bg_colour:                renderer.Colour_RGBA,
+	rendering:                bool,
+	ui_mutex:                 sync.Mutex,
+	render_mutex:             sync.Mutex,
+	render_thread:            ^thread.Thread,
+	root_ctrl:                ^UI_Ctrl,
+	parent_ctrl:              ^UI_Ctrl,
+	previous_sibling:         ^UI_Ctrl,
+	cached_ctrls:             map[string]^UI_Ctrl,
+	frame_idx:                u64,
+	cursor:                   [2]f32,
+	render_commands:          Dynamic_Slice(Render_Command),
+	last_render_commands:     Dynamic_Slice(Render_Command),
+	non_tree_render_commands: Dynamic_Slice(Render_Command),
 }
 
 clear_colour :: proc(colour: renderer.Colour_RGBA) {
@@ -470,6 +489,7 @@ init :: proc "contextless" () {
 	//platform.state.char_queue = make([dynamic]rune, allocator = tree_alloc)
 	state.render_commands = make_dynamic_slice(Render_Command, 4096, allocator = ui_alloc)
 	state.last_render_commands = make_dynamic_slice(Render_Command, 4096, allocator = ui_alloc)
+	state.non_tree_render_commands = make_dynamic_slice(Render_Command, 4096, allocator = ui_alloc)
 
 	state.render_thread = thread.create(render_proc)
 }
@@ -547,13 +567,25 @@ render_proc :: proc(t: ^thread.Thread) {
 			renderer.begin_drawing(state.window_state.window)
 			for command, i in to_slice(&state.last_render_commands) {
 				//fmt.println(command.bounds, command.style)
-				renderer.draw_rect(
-					command.bounds,
-					command.style.radius,
-					command.style.bg_colour,
-					command.style.border_width.l,
-					command.style.border_colour,
-				)
+				switch command.type {
+				case .Rect:
+					//fmt.println("Drawing rect, index:", i, command.bounds)
+					renderer.draw_rect(
+						command.bounds,
+						command.style.radius,
+						command.style.bg_colour,
+						command.style.border_width.l,
+						command.style.border_colour,
+					)
+				case .Text:
+					fmt.println("Drawing text, index:", i, command.bounds.x, command.bounds.y)
+					renderer.draw_point(
+						{command.bounds.x, command.bounds.y},
+						command.style.radius.x,
+					)
+				case .Img:
+					fmt.println("Drawing img")
+				}
 			}
 
 			renderer.end_drawing(state.window_state.window)
@@ -735,6 +767,12 @@ ui_handle_tree_layout :: proc(ctrl: ^UI_Ctrl) {
 		if ctrl.child_first != nil {
 			ui_handle_tree_layout(ctrl.child_first)
 		}
+	}
+	//add anything here to render on top of layout
+	fmt.println("Finished layout")
+	for command, i in to_slice(&state.non_tree_render_commands) {
+		fmt.println("Adding non-tree render command", i)
+		append_dynamic_slice(&state.render_commands, command)
 	}
 }
 
@@ -1248,6 +1286,7 @@ ui_end :: proc() {
 	dynamic_slice_copy(&state.last_render_commands, &state.render_commands)
 
 	clear_dynamic_slice(&state.render_commands)
+	clear_dynamic_slice(&state.non_tree_render_commands)
 
 	sync.unlock(&state.render_mutex)
 
