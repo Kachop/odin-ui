@@ -48,6 +48,8 @@ Basic controlls to add:
 
 Rectangle :: renderer.Rectangle
 
+draw_glyf :: proc(vertices: []renderer.Point, indices: []u32, radius: f32) {}
+
 draw_point :: proc(x, y, radius: f32) {
 	append_dynamic_slice(
 		&state.non_tree_render_commands,
@@ -578,8 +580,7 @@ render_proc :: proc(t: ^thread.Thread) {
 						command.style.border_colour,
 					)
 				case .Text:
-					fmt.println("Drawing text, index:", i, command.bounds.x, command.bounds.y)
-					renderer.draw_point(
+					renderer.draw_glyf(
 						{command.bounds.x, command.bounds.y},
 						command.style.radius.x,
 					)
@@ -769,9 +770,7 @@ ui_handle_tree_layout :: proc(ctrl: ^UI_Ctrl) {
 		}
 	}
 	//add anything here to render on top of layout
-	fmt.println("Finished layout")
 	for command, i in to_slice(&state.non_tree_render_commands) {
-		fmt.println("Adding non-tree render command", i)
 		append_dynamic_slice(&state.render_commands, command)
 	}
 }

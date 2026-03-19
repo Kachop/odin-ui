@@ -18,6 +18,7 @@ WindowError :: enum {
 Mode :: enum {
 	Triangles,
 	Point,
+	Glyf,
 }
 
 Shader :: enum {
@@ -92,7 +93,6 @@ end_drawing :: proc(window: glfw.WindowHandle) {
 	platform.update_mouse_pos()
 	glfw.SwapBuffers(window)
 	glfw.MakeContextCurrent(nil)
-	fmt.println(gl.NO_ERROR == gl.GetError())
 }
 
 clear_colour :: proc(colour: Colour_RGBA) {
@@ -109,11 +109,12 @@ rwb_begin :: proc(mode: Mode) {
 	state.mode = mode
 	switch state.mode {
 	case .Triangles:
-		fmt.println("Beggining", state.mode, "mode")
 		clear(&state.vertex_list)
 		clear(&state.indices_list)
 	case .Point:
-		fmt.println("Beggining", state.mode, "mode")
+		clear(&state.vertex_list)
+		clear(&state.indices_list)
+	case .Glyf:
 		clear(&state.vertex_list)
 		clear(&state.indices_list)
 	}
@@ -122,7 +123,6 @@ rwb_begin :: proc(mode: Mode) {
 rwb_end :: proc() {
 	switch state.mode {
 	case .Triangles:
-		fmt.println("Ending", state.mode, "mode")
 		vertices := state.vertex_list[:]
 		indices := state.indices_list[:]
 
@@ -163,7 +163,6 @@ rwb_end :: proc() {
 		gl.DeleteBuffers(1, &VBO)
 		gl.DeleteBuffers(1, &EBO)
 	case .Point:
-		fmt.println("Ending", state.mode, "mode")
 		vertices := state.vertex_list[:]
 		indices := state.indices_list[:]
 
@@ -183,17 +182,53 @@ rwb_end :: proc() {
 
 		gl.BindVertexArray(VAO)
 
-		fmt.println(gl.NO_ERROR == gl.GetError())
-		fmt.println("Drawing point:", vertices, cast(i32)len(vertices))
 		gl.DrawArrays(gl.POINTS, 0, cast(i32)len(vertices))
-
-		fmt.println(gl.NO_ERROR == gl.GetError())
 
 		gl.BindBuffer(gl.ARRAY_BUFFER, 0)
 		gl.BindVertexArray(0)
 
 		gl.DeleteVertexArrays(1, &VAO)
 		gl.DeleteBuffers(1, &VBO)
+	case .Glyf:
+		vertices := state.vertex_list[:]
+		indices := state.indices_list[:]
+
+		VBO, VAO, EBO: u32
+		gl.GenVertexArrays(1, &VAO)
+		gl.GenBuffers(1, &VBO)
+		gl.GenBuffers(1, &EBO)
+
+		gl.BindVertexArray(VAO)
+
+		gl.BindBuffer(gl.ARRAY_BUFFER, VBO)
+		gl.BufferData(
+			gl.ARRAY_BUFFER,
+			size_of(Point) * len(vertices),
+			raw_data(vertices),
+			gl.STATIC_DRAW,
+		)
+
+		gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, EBO)
+		gl.BufferData(
+			gl.ELEMENT_ARRAY_BUFFER,
+			size_of(u32) * len(indices),
+			raw_data(indices),
+			gl.STATIC_DRAW,
+		)
+
+		gl.VertexAttribPointer(0, 2, gl.FLOAT, gl.FALSE, 0, cast(uintptr)0)
+		gl.EnableVertexAttribArray(0)
+
+		gl.BindVertexArray(VAO)
+
+		gl.DrawElements(gl.LINES, cast(i32)len(indices), gl.UNSIGNED_INT, rawptr(uintptr(0)))
+
+		gl.BindBuffer(gl.ARRAY_BUFFER, 0)
+		gl.BindVertexArray(0)
+
+		gl.DeleteVertexArrays(1, &VAO)
+		gl.DeleteBuffers(1, &VBO)
+		gl.DeleteBuffers(1, &EBO)
 	}
 }
 
@@ -231,13 +266,52 @@ draw_point :: proc(pos: Point, radius: f32, colour: Colour_RGBA = RED) {
 		{normalise_val(x, 0, state.window_width), normalise_val(y, 0, state.window_height)},
 	)
 
-
-	fmt.println("Adding point to draw:", pos, radius, colour)
 	use_shader_program(state.shaders[.Point])
 	shader_set_uniform4(state.shaders[.Point], "colour", normalise_colour(colour))
 	shader_set_uniform1(state.shaders[.Point], "point_size", radius)
 
 	rwb_end()
+}
+
+draw_glyf :: proc(
+	points: []Point,
+	indices_end_points: []u32,
+	radius: f32,
+	colour: Colour_RGBA = RED,
+) {
+	for i in 0 ..< len(indices_end_points) {
+		rwb_begin(.Glyf)
+
+		for point in points {
+			rwb_vertex_2f(
+				{
+					normalise_val(point.x, 0, state.window_width),
+					normalise_val(point.y, 0, state.window_height),
+				},
+			)
+		}
+
+		indices: [dynamic]u32
+
+		index: u32
+
+		if i > 0 {
+			index = indices_end_points[i - 1] + 1
+		}
+
+		for index <= indices_end_points[i] {
+			append(&indices, index)
+			index += 1
+		}
+
+		rwb_indices(indices[:])
+
+		use_shader_program(state.shaders[.Point])
+		shader_set_uniform4(state.shaders[.Point], "colour", normalise_colour(colour))
+		shader_set_uniform1(state.shaders[.Point], "point_size", radius)
+
+		rwb_end()
+	}
 }
 
 draw_rect :: proc(
