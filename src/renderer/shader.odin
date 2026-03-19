@@ -1,7 +1,7 @@
 package renderer
 
 import "core:fmt"
-import "core:os/os2"
+import "core:os"
 import "core:strings"
 import "core:unicode/utf8"
 import gl "vendor:OpenGL"
@@ -35,8 +35,8 @@ Shader_Program :: struct {
 }
 
 create_shader_program :: proc(program: Shader, vertex_path, fragment_path: string) {
-	vertex_data, vert_err := os2.read_entire_file(vertex_path, context.allocator)
-	fragment_data, frag_err := os2.read_entire_file(fragment_path, context.allocator)
+	vertex_data, vert_err := os.read_entire_file(vertex_path, context.allocator)
+	fragment_data, frag_err := os.read_entire_file(fragment_path, context.allocator)
 	defer delete(vertex_data)
 	defer delete(fragment_data)
 

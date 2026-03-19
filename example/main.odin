@@ -129,7 +129,8 @@ main :: proc() {
 	//Boilerplater setup
 
 	ttf_reader := rwb.load_font(
-		"/home/robert/Development/odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
+		"/mnt/Guido/Development/Odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
+		//"/home/robert/Development/odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
 	)
 
 	err := rwb.create_window(800, 600, "Example")
@@ -208,8 +209,8 @@ main :: proc() {
 
 			//rwb.draw_point(400, 300, 5)
 
-			fmt.println(ttf_reader.glyf_data[0])
-			rwb.draw_glyf(400, 300, ttf_reader.glyf_data[0])
+			fmt.println(ttf_reader.glyf_data[1])
+			rwb.draw_glyf(400, 300, ttf_reader.glyf_data[1])
 
 			frame += 1
 		}

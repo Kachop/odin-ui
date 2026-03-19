@@ -4,7 +4,7 @@ import "base:runtime"
 import "core:encoding/endian"
 import "core:fmt"
 import "core:io"
-import os "core:os/os2"
+import os "core:os"
 import "core:unicode/utf8"
 
 //Logic for loading and utilising TTF fonts.
@@ -209,8 +209,8 @@ ttf_read_cmap :: proc(reader: ^TTF_Reader) {
 		id_delta := make([]i16, seg_count, allocator = ui_alloc)
 		ttf_read_i16_arr(reader, id_delta, cast(u32)seg_count)
 		id_range_offset := make([]u16, seg_count, allocator = ui_alloc)
+		reader_loc := reader.cursor //location set to start of range offset array
 		ttf_read_u16_arr(reader, id_range_offset, cast(u32)seg_count)
-		reader_loc := reader.cursor
 		fmt.println(
 			"length:",
 			length,
@@ -239,16 +239,33 @@ ttf_read_cmap :: proc(reader: ^TTF_Reader) {
 				id_range_offset[i],
 				"\n",
 			)
-			for j in start_code[i] ..= end_code[i] {
+			for c in start_code[i] ..= end_code[i] { 	//c = character code
 				ttf_move_to_location(
 					reader,
 					reader_loc +
-					(16 * cast(u32)(cast(i16)j + id_delta[i] + cast(i16)id_range_offset[i])),
+					(16 * cast(u32)(cast(i16)c + id_delta[i] + cast(i16)id_range_offset[i])),
 				)
 				rune_loc := ttf_read_u16(reader)
-				//reader.cmap[rune(j)] = cast(u32)rune_loc
 
-				append(&runes, rune(j))
+				if id_range_offset[i] == 0 {
+					reader.cmap[rune(c)] = cast(u32)(id_delta[i] + cast(i16)c) //Set the index for the rune which is used to look-up into the offset array
+				} else {
+					ttf_move_to_location(
+						reader,
+						reader_loc +
+						cast(u32)(i * 2) +
+						cast(u32)(id_range_offset[i] / 2) +
+						cast(u32)(c - start_code[i]),
+					)
+					glyf_index := ttf_read_u16(reader)
+
+					if glyf_index != 0 {
+						glyf_index = cast(u16)(cast(i16)glyf_index + id_delta[i])
+						reader.cmap[rune(c)] = cast(u32)glyf_index
+					} else {
+						fmt.println("Glyf not mapped")
+					}
+				}
 			}
 		}
 		fmt.println("Number of runes:", len(runes))
@@ -454,9 +471,10 @@ load_font :: proc(filepath: string) -> TTF_Reader {
 
 	ttf_move_to_location(&ttf_reader, ttf_reader.tables["loca"])
 
+	offsets := make([]u16, ttf_reader.max_glyfs + 1, allocator = ui_alloc)
+
 	if loc_format == 0 {
 		//short format table
-		offsets := make([]u16, ttf_reader.max_glyfs + 1, allocator = ui_alloc)
 		ttf_read_u16_arr(&ttf_reader, offsets, cast(u32)ttf_reader.max_glyfs + 1)
 
 		for offset, i in offsets {
@@ -467,15 +485,15 @@ load_font :: proc(filepath: string) -> TTF_Reader {
 
 		fmt.println("Offsets:", len(offsets) - 1, ", Runes:", len(runes))
 
-		for offset, i in offsets[:len(offsets) - 1] {
-			ttf_reader.cmap[runes[i]] = cast(u32)offset
-		}
+		//for offset, i in offsets[:len(offsets) - 1] {
+		//	ttf_reader.cmap[runes[i]] = cast(u32)offset
+		//}
 	} else if loc_format == 1 {
 		//long format table
 	}
 
 	ttf_move_to_location(&ttf_reader, ttf_reader.tables["glyf"])
-	ttf_skip_bytes(&ttf_reader, 60)
+	//ttf_skip_bytes(&ttf_reader, 60)
 
 	fmt.println("glyf_count:", ttf_reader.glyf_count)
 	ttf_read_glyf_data(&ttf_reader)
@@ -488,10 +506,10 @@ load_font :: proc(filepath: string) -> TTF_Reader {
 	//ttf_skip_bytes(&ttf_reader, ttf_reader.cmap['c'])
 	//ttf_read_glyf_data(&ttf_reader)
 
-	//fmt.println("glyf_count:", ttf_reader.glyf_count)
-	//ttf_move_to_location(&ttf_reader, ttf_reader.tables["glyf"])
-	//ttf_skip_bytes(&ttf_reader, ttf_reader.cmap['R'])
-	//ttf_read_glyf_data(&ttf_reader)
+	fmt.println("glyf_count:", ttf_reader.glyf_count)
+	ttf_move_to_location(&ttf_reader, ttf_reader.tables["glyf"])
+	ttf_skip_bytes(&ttf_reader, cast(u32)offsets[ttf_reader.cmap['e']])
+	ttf_read_glyf_data(&ttf_reader)
 
 	//ttf_skip_bytes(&ttf_reader, 7)
 	//ttf_read_glyf_data(&ttf_reader)
@@ -500,36 +518,67 @@ load_font :: proc(filepath: string) -> TTF_Reader {
 }
 
 draw_glyf :: proc(x, y: f32, glyf_data: Glyf_Data) {
-
-	num_of_contours := glyf_data.num_of_contours
-	contour_end_points := glyf_data.end_pts_of_contours
+	//Take the glyf data and build the list of vertices and indices before sending the draw command
+	//num_of_contours := glyf_data.num_of_contours
+	//contour_end_points := glyf_data.end_pts_of_contours
 
 	x, y := x, y
 
-	vertices: [dynamic]
+	//vertices: [dynamic]Point
+	off_curve_counter: u8
 
 	for flag, i in glyf_data.flags {
+
+		offset_x := glyf_data.x_coords[i]
+		offset_y := glyf_data.y_coords[i]
+
+		switch t in offset_x {
+		case u8:
+			x += cast(f32)offset_x.(u8) / 8
+		case i16:
+			x += cast(f32)offset_x.(i16) / 8
+		}
+
+		switch t in offset_y {
+		case u8:
+			y -= cast(f32)offset_y.(u8) / 8
+		case i16:
+			y -= cast(f32)offset_y.(i16) / 8
+		}
+
 		if ttf_is_flag_set(flag, 1) {
-			offset_x := glyf_data.x_coords[i]
-			offset_y := glyf_data.y_coords[i]
+			//On-curve point
 
-			switch t in offset_x {
-			case u8:
-				x += cast(f32)offset_x.(u8) / 8
-			case i16:
-				x += cast(f32)offset_x.(i16) / 8
-			}
-
-			switch t in offset_y {
-			case u8:
-				y += cast(f32)offset_y.(u8) / 8
-			case i16:
-				y += cast(f32)offset_y.(i16) / 8
-			}
+			off_curve_counter = 0
 
 			fmt.println("Drawing point @", x, y)
 
-			//draw_point(x, y, 5)
+			draw_point(x, y, 5)
+		} else {
+			//Off-curve point. 2 in a row means a point needs to be inserted in between.
+			off_curve_counter += 1
+
+			if off_curve_counter == 2 {
+				//On-curve point needs inserting in between.
+				off_curve_counter = 1
+				temp_x, temp_y: f32 = x, y
+
+				switch t in offset_x {
+				case u8:
+					temp_x -= cast(f32)offset_x.(u8) / 16
+				case i16:
+					temp_x -= cast(f32)offset_x.(i16) / 16
+				}
+
+				switch t in offset_y {
+				case u8:
+					temp_y += cast(f32)offset_y.(u8) / 16
+				case i16:
+					temp_y += cast(f32)offset_y.(i16) / 16
+				}
+
+				draw_point(temp_x, temp_y, 5)
+			}
 		}
 	}
 }

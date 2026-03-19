@@ -48,7 +48,7 @@ Basic controlls to add:
 
 Rectangle :: renderer.Rectangle
 
-draw_glyf :: proc(vertices: []renderer.Point, indices: []u32, radius: f32) {}
+//draw_glyf :: proc(vertices: []renderer.Point, indices: []u32, radius: f32) {}
 
 draw_point :: proc(x, y, radius: f32) {
 	append_dynamic_slice(
@@ -580,7 +580,7 @@ render_proc :: proc(t: ^thread.Thread) {
 						command.style.border_colour,
 					)
 				case .Text:
-					renderer.draw_glyf(
+					renderer.draw_point(
 						{command.bounds.x, command.bounds.y},
 						command.style.radius.x,
 					)

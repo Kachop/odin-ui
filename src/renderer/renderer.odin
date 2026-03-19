@@ -64,16 +64,18 @@ init_context :: proc() {
 
 	create_shader_program(
 		.Rect,
-		//"/mnt/Guido/Development/Odin/RWB-UI/src/renderer/shaders/rec.vs",
-		//"/mnt/Guido/Development/Odin/RWB-UI/src/renderer/shaders/rec.fs",
-		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_vs.shader",
-		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_fs.shader",
+		"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_vs.shader",
+		"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_fs.shader",
+		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_vs.shader",
+		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_fs.shader",
 	)
 
 	create_shader_program(
 		.Point,
-		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_vs.shader",
-		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_fs.shader",
+		"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_vs.shader",
+		"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_fs.shader",
+		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_vs.shader",
+		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_fs.shader",
 	)
 
 	use_shader_program(state.shaders[.Rect])
