@@ -206,17 +206,17 @@ main :: proc() {
 
 			rwb.ui_box_end()
 
-			//fmt.println("fps:", frame / time.duration_seconds(time.stopwatch_duration(timer)))
+			fmt.println("fps:", frame / time.duration_seconds(time.stopwatch_duration(timer)))
 
 			//rwb.draw_point(400, 300, 5)
 
-			rwb.draw_glyf(400, 300, 'R')
-			rwb.draw_glyf(450, 300, 'e')
-			rwb.draw_glyf(490, 300, 'b')
-			rwb.draw_glyf(550, 300, 'e')
-			rwb.draw_glyf(600, 300, 'c')
-			rwb.draw_glyf(650, 300, 'c')
-			rwb.draw_glyf(700, 300, 'a')
+			//rwb.draw_glyf(400, 300, 'R')
+			//rwb.draw_glyf(450, 300, 'e')
+			//rwb.draw_glyf(490, 300, 'b')
+			//rwb.draw_glyf(550, 300, 'e')
+			//rwb.draw_glyf(600, 300, 'c')
+			rwb.draw_glyf(450, 300, 'q')
+			rwb.draw_glyf(700, 300, 'o')
 
 			frame += 1
 		}

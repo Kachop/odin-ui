@@ -573,7 +573,7 @@ calculate_bezier :: proc(p0, p1, p2: renderer.Point, resolution: int) -> []rende
 	return points[:]
 }
 
-calculate_curve_points :: proc(x, y: f32, glyf_data: ^Glyf_Data) {
+calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 	//For non-cached glyfs. Calculate the curve points so the line segments can be drawn. Add curve points to the glyf data.
 	num_of_contours := glyf_data.num_of_contours
 	contour_end_points := glyf_data.end_pts_of_contours
@@ -585,13 +585,12 @@ calculate_curve_points :: proc(x, y: f32, glyf_data: ^Glyf_Data) {
 	on_curve_counter: u8
 	off_curve_counter: u8
 
-	scale_multiplyer: f32 = 20
+	scale_multiplyer: f32 = 5
 
 	contour_start := 0
 
 	for end_index in glyf_data.end_pts_of_contours {
 		on_curve_offset: int //Offset to first on-curve point.
-		fmt.println("New contour")
 		for i in contour_start ..< cast(int)end_index {
 			if ttf_is_flag_set(glyf_data.flags[i], 1) {
 				on_curve_offset = i - contour_start
@@ -616,26 +615,33 @@ calculate_curve_points :: proc(x, y: f32, glyf_data: ^Glyf_Data) {
 				if on_curve_counter == 2 {
 					on_curve_counter = 1
 
-					fmt.println("Off curve point inserted")
-
-					append(
-						&curve_points,
-						renderer.Point {
-							x +
-							((cast(f32)x_coord + cast(f32)glyf_data.x_coords[index - 1]) /
+					if index == contour_start {
+						append(
+							&curve_points,
+							renderer.Point {
+								((cast(f32)x_coord + cast(f32)glyf_data.x_coords[end_index])) /
+								(scale_multiplyer * 2),
+								((cast(f32)y_coord + cast(f32)glyf_data.y_coords[end_index])) /
+								(scale_multiplyer * 2),
+							},
+						)
+					} else {
+						append(
+							&curve_points,
+							renderer.Point {
+								((cast(f32)x_coord + cast(f32)glyf_data.x_coords[index - 1]) /
 									(scale_multiplyer * 2)),
-							y +
-							((cast(f32)y_coord + cast(f32)glyf_data.y_coords[index - 1]) /
+								((cast(f32)y_coord + cast(f32)glyf_data.y_coords[index - 1]) /
 									(scale_multiplyer * 2)),
-						},
-					)
+							},
+						)
+					}
 				}
-				fmt.println("On curve point inserted")
 				append(
 					&curve_points,
 					renderer.Point {
-						x + (cast(f32)x_coord / scale_multiplyer),
-						y + (cast(f32)y_coord / scale_multiplyer),
+						(cast(f32)x_coord / scale_multiplyer),
+						(cast(f32)y_coord / scale_multiplyer),
 					},
 				)
 			} else {
@@ -648,25 +654,33 @@ calculate_curve_points :: proc(x, y: f32, glyf_data: ^Glyf_Data) {
 					//On-curve point needs inserting in between.
 					off_curve_counter = 1
 
-					fmt.println("On curve point inserted")
-					append(
-						&curve_points,
-						renderer.Point {
-							x +
-							((cast(f32)x_coord + cast(f32)glyf_data.x_coords[index - 1]) /
+					if index == contour_start {
+						append(
+							&curve_points,
+							renderer.Point {
+								((cast(f32)x_coord + cast(f32)glyf_data.x_coords[end_index])) /
+								(scale_multiplyer * 2),
+								((cast(f32)y_coord + cast(f32)glyf_data.y_coords[end_index])) /
+								(scale_multiplyer * 2),
+							},
+						)
+					} else {
+						append(
+							&curve_points,
+							renderer.Point {
+								((cast(f32)x_coord + cast(f32)glyf_data.x_coords[index - 1]) /
 									(scale_multiplyer * 2)),
-							y +
-							((cast(f32)y_coord + cast(f32)glyf_data.y_coords[index - 1]) /
+								((cast(f32)y_coord + cast(f32)glyf_data.y_coords[index - 1]) /
 									(scale_multiplyer * 2)),
-						},
-					)
+							},
+						)
+					}
 				}
-				fmt.println("Off curve point inserted")
 				append(
 					&curve_points,
 					renderer.Point {
-						x + (cast(f32)x_coord / scale_multiplyer),
-						y + (cast(f32)y_coord / scale_multiplyer),
+						(cast(f32)x_coord / scale_multiplyer),
+						(cast(f32)y_coord / scale_multiplyer),
 					},
 				)
 			}
@@ -678,7 +692,6 @@ calculate_curve_points :: proc(x, y: f32, glyf_data: ^Glyf_Data) {
 		if on_curve_offset != 0 { 	//If contour is offset the end point is actually before the start point
 			if ttf_is_flag_set(glyf_data.flags[contour_start + on_curve_offset], 1) &&
 			   ttf_is_flag_set(glyf_data.flags[contour_start + on_curve_offset - 1], 1) {
-				fmt.println("Inserting point between start and end")
 				append(
 					&curve_points,
 					renderer.Point {
@@ -692,7 +705,6 @@ calculate_curve_points :: proc(x, y: f32, glyf_data: ^Glyf_Data) {
 		} else {
 			if ttf_is_flag_set(glyf_data.flags[contour_start], 1) &&
 			   ttf_is_flag_set(glyf_data.flags[end_index], 1) {
-				fmt.println("Inserting point between start and end")
 				append(
 					&curve_points,
 					renderer.Point {
@@ -713,92 +725,7 @@ calculate_curve_points :: proc(x, y: f32, glyf_data: ^Glyf_Data) {
 
 	fmt.println(curve_contour_end_points)
 
-	/*
-	for flag, i in glyf_data.flags {
-		offset_x := glyf_data.x_coords[i]
-		offset_y := glyf_data.y_coords[i]
-
-		switch t in offset_x {
-		case u8:
-			x += cast(f32)offset_x.(u8) / 10
-		case i16:
-			x += cast(f32)offset_x.(i16) / 10
-		}
-
-		switch t in offset_y {
-		case u8:
-			y -= cast(f32)offset_y.(u8) / 10
-		case i16:
-			y -= cast(f32)offset_y.(i16) / 10
-		}
-
-		if ttf_is_flag_set(flag, 1) {
-			//On-curve point
-			off_curve_counter = 0
-			on_curve_counter += 1
-
-			if on_curve_counter == 2 {
-				on_curve_counter = 1
-
-				temp_x, temp_y: f32 = x, y
-
-				switch t in offset_x {
-				case u8:
-					temp_x -= cast(f32)offset_x.(u8) / 20
-				case i16:
-					temp_x -= cast(f32)offset_x.(i16) / 20
-				}
-
-				switch t in offset_y {
-				case u8:
-					temp_y += cast(f32)offset_y.(u8) / 20
-				case i16:
-					temp_y += cast(f32)offset_y.(i16) / 20
-				}
-
-				append(&curve_points, renderer.Point{temp_x, temp_y})
-			}
-			append(&curve_points, renderer.Point{x, y})
-		} else {
-			//Off-curve point. 2 in a row means a point needs to be inserted in between.
-			on_curve_counter = 0
-			off_curve_counter += 1
-
-			if off_curve_counter == 2 {
-				//On-curve point needs inserting in between.
-				off_curve_counter = 1
-				temp_x, temp_y: f32 = x, y
-
-				switch t in offset_x {
-				case u8:
-					temp_x -= cast(f32)offset_x.(u8) / 20
-				case i16:
-					temp_x -= cast(f32)offset_x.(i16) / 20
-				}
-
-				switch t in offset_y {
-				case u8:
-					temp_y += cast(f32)offset_y.(u8) / 20
-				case i16:
-					temp_y += cast(f32)offset_y.(i16) / 20
-				}
-
-				append(&curve_points, renderer.Point{temp_x, temp_y})
-			}
-			append(&curve_points, renderer.Point{x, y})
-		}
-
-		if cast(u16)i >= contour_end_points[current_contour] {
-			current_contour += 1
-			on_curve_counter = 0
-			off_curve_counter = 0
-			append(&curve_contour_end_points, cast(int)len(curve_points) - 1)
-		}
-	}
-*/
 	current_contour = 0
-
-	//fmt.println("Contour end points:", curve_contour_end_points)
 
 	bezier_curve_points := make([dynamic][]renderer.Point, allocator = context.allocator)
 	current_contour_curve_points := make([dynamic]renderer.Point, allocator = context.allocator)
@@ -823,38 +750,5 @@ calculate_curve_points :: proc(x, y: f32, glyf_data: ^Glyf_Data) {
 		current_contour_curve_points = make([dynamic]renderer.Point, allocator = context.allocator)
 		contour_start = end_index + 1
 	}
-	/*
-	for index := 2; index < len(curve_points); index += 2 {
-		bezier_points := calculate_bezier(
-			curve_points[index - 2],
-			curve_points[index - 1],
-			curve_points[index],
-			50,
-		)
-		for point in bezier_points {
-			append(&current_contour_curve_points, point)
-		}
-
-		//fmt.println(
-		//	"Index:",
-		//	index,
-		//	"Contour end point:",
-		//	curve_contour_end_points[current_contour],
-		//)
-
-		if index >= curve_contour_end_points[current_contour] {
-			append(&bezier_curve_points, current_contour_curve_points[:])
-			current_contour_curve_points = make(
-				[dynamic]renderer.Point,
-				allocator = context.allocator,
-			)
-			current_contour += 1
-			index -= 1
-			if cast(int)current_contour >= len(curve_contour_end_points) {
-				break
-			}
-		}
-	}
-*/
 	glyf_data.bezier_curve_points = bezier_curve_points[:]
 }

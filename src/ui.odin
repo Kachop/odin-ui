@@ -56,36 +56,28 @@ load_font :: proc(filepath: string) {
 draw_glyf :: proc(x, y: f32, char: rune) {
 	glyf_data := &state.font.glyf_info[char]
 	if glyf_data.cached {
-		//fmt.println("Drawing glyf:", char, "Contours:", glyf_data.num_of_contours)
-		//fmt.println("Bezier contours:", len(glyf_data.bezier_curve_points))
-
-		fmt.println("Glyf cached:", char, "Curve points:", len(glyf_data.bezier_curve_points[0]))
-
 		for contour_curve_points in glyf_data.bezier_curve_points {
 			for i := 1; i < len(contour_curve_points); i += 1 {
-				//fmt.println(char, "Start index:", start_index, "End index:", end_index)
-				//fmt.println(
-				//	"Drawing line:",
-				//	char,
-				//	glyf_data.bezier_curve_points[i - 1],
-				//	glyf_data.bezier_curve_points[i],
-				//)
-				draw_line(contour_curve_points[i - 1], contour_curve_points[i], 5)
+				draw_line(
+					{x, y} + contour_curve_points[i - 1],
+					{x, y} + contour_curve_points[i],
+					5,
+				)
 
 				if i == len(contour_curve_points) - 1 {
-					draw_line(contour_curve_points[i], contour_curve_points[0], 0)
+					draw_line(
+						{x, y} + contour_curve_points[i],
+						{x, y} + contour_curve_points[0],
+						0,
+					)
 				}
 			}
 		}
 	} else {
-		fonts.calculate_curve_points(x, y, glyf_data)
+		fonts.calculate_curve_points(glyf_data)
 		glyf_data.cached = true
 		draw_glyf(x, y, char)
 	}
-	//points_to_draw := fonts.draw_glyf(x, y, glyf_data)
-	//for point in points_to_draw {
-	//	draw_point(point.x, point.y, 5)
-	//}
 }
 
 draw_point :: proc(x, y, radius: f32) {
