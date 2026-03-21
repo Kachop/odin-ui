@@ -10,6 +10,7 @@ import vmem "core:mem/virtual"
 import "core:slice"
 import "core:sync"
 import "core:thread"
+import fonts "fonts"
 import platform "platform"
 import renderer "renderer"
 
@@ -48,7 +49,44 @@ Basic controlls to add:
 
 Rectangle :: renderer.Rectangle
 
-//draw_glyf :: proc(vertices: []renderer.Point, indices: []u32, radius: f32) {}
+load_font :: proc(filepath: string) {
+	state.font = fonts.ttf_load_font(filepath)
+}
+
+draw_glyf :: proc(x, y: f32, char: rune) {
+	glyf_data := &state.font.glyf_info[char]
+	if glyf_data.cached {
+		//fmt.println("Drawing glyf:", char, "Contours:", glyf_data.num_of_contours)
+		//fmt.println("Bezier contours:", len(glyf_data.bezier_curve_points))
+
+		fmt.println("Glyf cached:", char, "Curve points:", len(glyf_data.bezier_curve_points[0]))
+
+		for contour_curve_points in glyf_data.bezier_curve_points {
+			for i := 1; i < len(contour_curve_points); i += 1 {
+				//fmt.println(char, "Start index:", start_index, "End index:", end_index)
+				//fmt.println(
+				//	"Drawing line:",
+				//	char,
+				//	glyf_data.bezier_curve_points[i - 1],
+				//	glyf_data.bezier_curve_points[i],
+				//)
+				draw_line(contour_curve_points[i - 1], contour_curve_points[i], 5)
+
+				if i == len(contour_curve_points) - 1 {
+					draw_line(contour_curve_points[i], contour_curve_points[0], 0)
+				}
+			}
+		}
+	} else {
+		fonts.calculate_curve_points(x, y, glyf_data)
+		glyf_data.cached = true
+		draw_glyf(x, y, char)
+	}
+	//points_to_draw := fonts.draw_glyf(x, y, glyf_data)
+	//for point in points_to_draw {
+	//	draw_point(point.x, point.y, 5)
+	//}
+}
 
 draw_point :: proc(x, y, radius: f32) {
 	append_dynamic_slice(
@@ -59,6 +97,19 @@ draw_point :: proc(x, y, radius: f32) {
 			ui_ctrl_style(radius = {radius, radius, radius, radius}),
 		},
 	)
+}
+
+draw_line :: proc(p0, p1: renderer.Point, radius: f32) {
+	append_dynamic_slice(
+		&state.non_tree_render_commands,
+		Render_Command {
+			.Text,
+			{p0.x, p0.y, p1.x, p1.y},
+			ui_ctrl_style(radius = {radius, radius, radius, radius}),
+		},
+	)
+	//fmt.println("Adding line:", "p0:", p0, ", p1:", p1)
+	//fmt.println("Lines to draw:", dynamic_slice_len(state.non_tree_render_commands))
 }
 
 freestyle_rect :: proc(x, y, width, height: f32) {
@@ -439,6 +490,7 @@ Render_Command :: struct {
 @(private)
 UI_State :: struct {
 	window_state:             ^platform.Window_State,
+	font:                     fonts.Font,
 	bg_colour:                renderer.Colour_RGBA,
 	rendering:                bool,
 	ui_mutex:                 sync.Mutex,
@@ -580,9 +632,9 @@ render_proc :: proc(t: ^thread.Thread) {
 						command.style.border_colour,
 					)
 				case .Text:
-					renderer.draw_point(
+					renderer.draw_line(
 						{command.bounds.x, command.bounds.y},
-						command.style.radius.x,
+						{command.bounds.width, command.bounds.height},
 					)
 				case .Img:
 					fmt.println("Drawing img")
@@ -933,21 +985,21 @@ ui_get_ctrl_bounds :: proc(ctrls: Dynamic_Slice(^UI_Ctrl)) {
 	}
 
 	if total_overspill.x > 0 {
-		fmt.println("x overspill in", ctrls.data[0].parent.id.id_string, "by", total_overspill.x)
+		//fmt.println("x overspill in", ctrls.data[0].parent.id.id_string, "by", total_overspill.x)
 		//Check if any of the controls have non-1 strictness.
 		//If so reduce all of their sizes proportionally to remove the overspill.
 		if dynamic_slice_len(flexible_x_ctrls) > 0 {
 			denominator: f32
-			fmt.println("flexible controls:", dynamic_slice_len(flexible_x_ctrls))
+			//fmt.println("flexible controls:", dynamic_slice_len(flexible_x_ctrls))
 			for ctrl in to_slice(&flexible_x_ctrls) {
 				denominator += (1 - ctrl.styles.sizing.x.strictness) * ctrl.bounds.width
-				fmt.println(ctrl.id.id_string, "width:", ctrl.bounds.width)
+				//fmt.println(ctrl.id.id_string, "width:", ctrl.bounds.width)
 			}
 
-			fmt.println("denominator:", denominator)
+			//fmt.println("denominator:", denominator)
 
 			proportion := total_overspill.x / denominator
-			fmt.println("Proportion:", proportion)
+			//fmt.println("Proportion:", proportion)
 
 			for ctrl in to_slice(&flexible_x_ctrls) {
 				ctrl.bounds.width /= ((1 - ctrl.styles.sizing.x.strictness) * proportion)
@@ -979,7 +1031,7 @@ ui_get_ctrl_bounds :: proc(ctrls: Dynamic_Slice(^UI_Ctrl)) {
 
 		if total_overspill.x > 0 {
 			//Still and overspill, reduce everything.
-			fmt.println("Still an overspill of:", total_overspill.x)
+			//fmt.println("Still an overspill of:", total_overspill.x)
 
 			total_width: f32
 			for ctrl in to_slice(&ctrls) {
@@ -993,14 +1045,14 @@ ui_get_ctrl_bounds :: proc(ctrls: Dynamic_Slice(^UI_Ctrl)) {
 				if ctrl.bounds.width > 0 {
 					percentage = ctrl.bounds.width / total_width
 					ctrl.bounds.width -= total_overspill.x * percentage
-					fmt.println(ctrl.id.id_string, "percentage:", percentage)
+					//fmt.println(ctrl.id.id_string, "percentage:", percentage)
 				}
 			}
 		}
 	}
 
 	if total_overspill.y > 0 {
-		fmt.println("y overspill in", ctrls.data[0].parent.id.id_string, "by", total_overspill.y)
+		//fmt.println("y overspill in", ctrls.data[0].parent.id.id_string, "by", total_overspill.y)
 		//If so reduce all of their sizes proportionally to remove the overspill.
 		if dynamic_slice_len(flexible_y_ctrls) > 0 {
 			denominator: f32

@@ -128,8 +128,9 @@ main :: proc() {
 	context.temp_allocator = rwb.frame_alloc
 	//Boilerplater setup
 
-	ttf_reader := rwb.load_font(
-		"/mnt/Guido/Development/Odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
+	rwb.load_font(
+		"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Paul/Paul.ttf",
+		//"/mnt/Guido/Development/Odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
 		//"/home/robert/Development/odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
 	)
 
@@ -205,12 +206,17 @@ main :: proc() {
 
 			rwb.ui_box_end()
 
-			fmt.println("fps:", frame / time.duration_seconds(time.stopwatch_duration(timer)))
+			//fmt.println("fps:", frame / time.duration_seconds(time.stopwatch_duration(timer)))
 
 			//rwb.draw_point(400, 300, 5)
 
-			fmt.println(ttf_reader.glyf_data[1])
-			rwb.draw_glyf(400, 300, ttf_reader.glyf_data[1])
+			rwb.draw_glyf(400, 300, 'R')
+			rwb.draw_glyf(450, 300, 'e')
+			rwb.draw_glyf(490, 300, 'b')
+			rwb.draw_glyf(550, 300, 'e')
+			rwb.draw_glyf(600, 300, 'c')
+			rwb.draw_glyf(650, 300, 'c')
+			rwb.draw_glyf(700, 300, 'a')
 
 			frame += 1
 		}

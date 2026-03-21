@@ -18,6 +18,7 @@ WindowError :: enum {
 Mode :: enum {
 	Triangles,
 	Point,
+	Line,
 	Glyf,
 }
 
@@ -61,6 +62,7 @@ init_context :: proc() {
 	gl.Enable(gl.BLEND)
 	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 	gl.Enable(gl.PROGRAM_POINT_SIZE)
+	gl.LineWidth(2)
 
 	create_shader_program(
 		.Rect,
@@ -116,6 +118,9 @@ rwb_begin :: proc(mode: Mode) {
 	case .Point:
 		clear(&state.vertex_list)
 		clear(&state.indices_list)
+	case .Line:
+		clear(&state.vertex_list)
+		clear(&state.indices_list)
 	case .Glyf:
 		clear(&state.vertex_list)
 		clear(&state.indices_list)
@@ -168,8 +173,6 @@ rwb_end :: proc() {
 		vertices := state.vertex_list[:]
 		indices := state.indices_list[:]
 
-		//gl.Clear(gl.DEPTH_BUFFER_BIT)
-
 		VBO, VAO: u32
 		gl.GenVertexArrays(1, &VAO)
 		gl.GenBuffers(1, &VBO)
@@ -185,6 +188,31 @@ rwb_end :: proc() {
 		gl.BindVertexArray(VAO)
 
 		gl.DrawArrays(gl.POINTS, 0, cast(i32)len(vertices))
+
+		gl.BindBuffer(gl.ARRAY_BUFFER, 0)
+		gl.BindVertexArray(0)
+
+		gl.DeleteVertexArrays(1, &VAO)
+		gl.DeleteBuffers(1, &VBO)
+	case .Line:
+		vertices := state.vertex_list[:]
+		indices := state.indices_list[:]
+
+		VBO, VAO: u32
+		gl.GenVertexArrays(1, &VAO)
+		gl.GenBuffers(1, &VBO)
+
+		gl.BindVertexArray(VAO)
+
+		gl.BindBuffer(gl.ARRAY_BUFFER, VBO)
+		gl.BufferData(gl.ARRAY_BUFFER, size_of(vertices), raw_data(vertices), gl.STATIC_DRAW)
+
+		gl.VertexAttribPointer(0, 2, gl.FLOAT, gl.FALSE, 0, cast(uintptr)0)
+		gl.EnableVertexAttribArray(0)
+
+		gl.BindVertexArray(VAO)
+
+		gl.DrawArrays(gl.LINES, 0, cast(i32)len(vertices))
 
 		gl.BindBuffer(gl.ARRAY_BUFFER, 0)
 		gl.BindVertexArray(0)
@@ -275,6 +303,53 @@ draw_point :: proc(pos: Point, radius: f32, colour: Colour_RGBA = RED) {
 	rwb_end()
 }
 
+draw_line :: proc(p0, p1: Point, colour: Colour_RGBA = RED) {
+	x_1 := p0.x
+	y_1 := p0.y
+
+	x_2 := p1.x
+	y_2 := p1.y
+
+	//fmt.println("Draw line called:", "p0:", p0, ", p1:", p1)
+
+	rwb_begin(.Line)
+
+	rwb_vertex_2f(
+		{normalise_val(x_1, 0, state.window_width), normalise_val(y_1, 0, state.window_height)},
+	)
+
+	rwb_vertex_2f(
+		{normalise_val(x_2, 0, state.window_width), normalise_val(y_2, 0, state.window_height)},
+	)
+
+	use_shader_program(state.shaders[.Point])
+	shader_set_uniform4(state.shaders[.Point], "colour", normalise_colour(colour))
+
+	rwb_end()
+}
+
+draw_text :: proc(pos: Point, text: string) {
+	for codepoint in text {
+		draw_glyf(pos, codepoint)
+		//Do glyf spacing based on font info
+	}
+}
+//need to add sizing
+draw_glyf :: proc(pos: Point, glyf: rune) {
+	//Direct font rendering, can use the glyf info to render the text given in the Render_Command without faffing with making custom render commands
+
+	/*
+	- Check glyf cache for full extrapolated point info.
+	- If there draw the lines.
+	- If not get the glyf info (from some sort of font struct)
+	- Calculate the besier curve points
+	- Add to the cache
+	- Draw.
+	*/
+
+
+}
+/*
 draw_glyf :: proc(
 	points: []Point,
 	indices_end_points: []u32,
@@ -314,7 +389,7 @@ draw_glyf :: proc(
 
 		rwb_end()
 	}
-}
+}*/
 
 draw_rect :: proc(
 	bounds: Rectangle,
