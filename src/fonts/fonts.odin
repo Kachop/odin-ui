@@ -560,15 +560,11 @@ bezier_interpolation :: proc(p0, p1, p2: renderer.Point, t: f32) -> renderer.Poi
 
 calculate_bezier :: proc(p0, p1, p2: renderer.Point, resolution: int) -> []renderer.Point {
 	points: [dynamic]renderer.Point
-	prev_point_on_curve := p0
-	append(&points, prev_point_on_curve)
 
 	for i := 0; i < resolution; i += 1 {
 		t: f32 = (cast(f32)(i + 1) / cast(f32)resolution)
 		next_point_on_curve := bezier_interpolation(p0, p1, p2, t)
-		//draw_line(prev_point_on_curve, next_point_on_curve, 5)
 		append(&points, next_point_on_curve)
-		prev_point_on_curve = next_point_on_curve
 	}
 	return points[:]
 }
@@ -585,14 +581,14 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 	on_curve_counter: u8
 	off_curve_counter: u8
 
-	scale_multiplyer: f32 = 5
+	scale_multiplyer: f32 = 20
 
 	contour_start := 0
 
 	for end_index in glyf_data.end_pts_of_contours {
 		on_curve_offset: int //Offset to first on-curve point.
 		for i in contour_start ..< cast(int)end_index {
-			if ttf_is_flag_set(glyf_data.flags[i], 1) {
+			if ttf_is_flag_set(glyf_data.flags[i], 0) {
 				on_curve_offset = i - contour_start
 				break
 			}
@@ -606,7 +602,7 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 			x_coord := glyf_data.x_coords[index]
 			y_coord := glyf_data.y_coords[index]
 
-			if ttf_is_flag_set(glyf_data.flags[index], 1) {
+			if ttf_is_flag_set(glyf_data.flags[index], 0) {
 				//fmt.println(index, "On curve")
 				//On curve point
 				off_curve_counter = 0
@@ -689,34 +685,18 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 		on_curve_counter = 0
 		off_curve_counter = 0
 
-		if on_curve_offset != 0 { 	//If contour is offset the end point is actually before the start point
-			if ttf_is_flag_set(glyf_data.flags[contour_start + on_curve_offset], 1) &&
-			   ttf_is_flag_set(glyf_data.flags[contour_start + on_curve_offset - 1], 1) {
+		if on_curve_offset == 0 && ttf_is_flag_set(glyf_data.flags[end_index], 0) {
+			if len(curve_contour_end_points) > 0 {
 				append(
 					&curve_points,
-					renderer.Point {
-						(curve_points[len(curve_points) - 1].x + curve_points[contour_start].x) /
-						2,
-						(curve_points[len(curve_points) - 1].y + curve_points[contour_start].y) /
-						2,
-					},
+					(curve_points[len(curve_points) - 1] +
+						curve_points[curve_contour_end_points[len(curve_contour_end_points) - 1] + 1]) /
+					2,
 				)
-			}
-		} else {
-			if ttf_is_flag_set(glyf_data.flags[contour_start], 1) &&
-			   ttf_is_flag_set(glyf_data.flags[end_index], 1) {
-				append(
-					&curve_points,
-					renderer.Point {
-						(curve_points[len(curve_points) - 1].x + curve_points[contour_start].x) /
-						2,
-						(curve_points[len(curve_points) - 1].y + curve_points[contour_start].y) /
-						2,
-					},
-				)
+			} else {
+				append(&curve_points, (curve_points[len(curve_points) - 1] + curve_points[0]) / 2)
 			}
 		}
-		fmt.println("Finished points:", len(curve_points))
 
 		contour_start = cast(int)end_index + 1
 
@@ -744,6 +724,15 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 			for point in bezier_points {
 				append(&current_contour_curve_points, point)
 			}
+		}
+
+		for point in calculate_bezier(
+			curve_points[end_index - 1],
+			curve_points[end_index],
+			curve_points[contour_start],
+			30,
+		) {
+			append(&current_contour_curve_points, point)
 		}
 
 		append(&bezier_curve_points, current_contour_curve_points[:])

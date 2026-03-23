@@ -129,9 +129,7 @@ main :: proc() {
 	//Boilerplater setup
 
 	rwb.load_font(
-		"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Paul/Paul.ttf",
-		//"/mnt/Guido/Development/Odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
-		//"/home/robert/Development/odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
+		"/home/robert/Development/odin/odin-ui/src/fonts/paul-font/paul_font.ttf", //"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Paul/Paul.ttf",//"/mnt/Guido/Development/Odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
 	)
 
 	err := rwb.create_window(800, 600, "Example")
@@ -210,13 +208,15 @@ main :: proc() {
 
 			//rwb.draw_point(400, 300, 5)
 
-			//rwb.draw_glyf(400, 300, 'R')
-			//rwb.draw_glyf(450, 300, 'e')
-			//rwb.draw_glyf(490, 300, 'b')
-			//rwb.draw_glyf(550, 300, 'e')
-			//rwb.draw_glyf(600, 300, 'c')
-			rwb.draw_glyf(450, 300, 'q')
-			rwb.draw_glyf(700, 300, 'o')
+			rwb.draw_glyf(400, 300, 'A')
+			rwb.draw_glyf(450, 300, 'j')
+			rwb.draw_glyf(490, 300, 'i')
+			rwb.draw_glyf(550, 300, 'O')
+			rwb.draw_glyf(600, 300, 'G')
+			rwb.draw_glyf(650, 300, 'y')
+			rwb.draw_glyf(700, 300, 'm')
+			//rwb.draw_glyf(450, 400, 'C')
+			//rwb.draw_glyf(700, 400, 'D')
 
 			frame += 1
 		}
