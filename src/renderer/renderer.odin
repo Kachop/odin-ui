@@ -38,8 +38,8 @@ Rectangle :: struct #packed {
 
 @(private)
 Render_State :: struct {
-	window_width:  f32,
-	window_height: f32,
+	window_width:  f32, //Pixels
+	window_height: f32, //Pixels
 	shaders:       map[Shader]u32,
 	mode:          Mode,
 	vertex_list:   [dynamic]Point,

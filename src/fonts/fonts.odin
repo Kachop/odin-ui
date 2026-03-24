@@ -1,5 +1,6 @@
 package font
 
+import platform "../platform"
 import renderer "../renderer"
 import "base:runtime"
 import "core:encoding/endian"
@@ -45,9 +46,10 @@ Glyf_Data :: struct {
 	instruction_length:         u16,
 	instructions:               []u8,
 	flags:                      []u8,
-	x_coords, y_coords:         []i16,
+	x_coords, y_coords:         []f32,
 	cached:                     bool,
 	bezier_curve_points:        [][]renderer.Point, //calculated the first time the glyf is drawn
+	units_per_em:               u16,
 }
 
 load_ttf :: proc(
@@ -297,7 +299,7 @@ runes: [dynamic]rune
 
 ttf_get_coords :: proc(
 	reader: ^TTF_Reader,
-	coords: []i16,
+	coords: []f32,
 	num_of_coords: u16,
 	flags: []u8,
 	coord_type: Coord_Type,
@@ -348,14 +350,17 @@ ttf_get_coords :: proc(
 		}
 	}
 
-	coord: i16
+	coord: f32
+
+	//Units per em, number of coord units per em, em is random known measurement
+	//Lowest rec PPEM, pixels per em.
 
 	for i in 0 ..< num_of_coords {
 		switch coord_type {
 		case .X:
-			coord += coord_offsets[i]
+			coord += (cast(f32)coord_offsets[i])
 		case .Y:
-			coord -= coord_offsets[i]
+			coord -= (cast(f32)coord_offsets[i])
 		}
 		coords[i] = coord
 	}
@@ -363,6 +368,7 @@ ttf_get_coords :: proc(
 
 ttf_read_glyf_data :: proc(
 	reader: ^TTF_Reader,
+	units_per_em: u16,
 	allocator: runtime.Allocator = context.allocator,
 ) -> Glyf_Data {
 	//fmt.println("Reading glyf @", reader.cursor)
@@ -390,6 +396,7 @@ ttf_read_glyf_data :: proc(
 			{},
 			false,
 			{},
+			0,
 		}
 	} else if num_of_contours < 0 {
 		//Compound glyf. TODO: Implement
@@ -434,8 +441,8 @@ ttf_read_glyf_data :: proc(
 	//	flags,
 	//)
 
-	x_coords := make([]i16, num_of_coords, allocator)
-	y_coords := make([]i16, num_of_coords, allocator)
+	x_coords := make([]f32, num_of_coords, allocator)
+	y_coords := make([]f32, num_of_coords, allocator)
 
 	ttf_get_coords(reader, x_coords, num_of_coords, flags, .X)
 	ttf_get_coords(reader, y_coords, num_of_coords, flags, .Y)
@@ -460,6 +467,7 @@ ttf_read_glyf_data :: proc(
 		y_coords,
 		false,
 		{},
+		units_per_em,
 	}
 }
 
@@ -499,10 +507,19 @@ ttf_load_font :: proc(filepath: string, allocator: runtime.Allocator = context.a
 
 	ttf_move_to_location(&ttf_reader, ttf_reader.tables["head"])
 
-	ttf_skip_bytes(&ttf_reader, 46)
+	ttf_skip_bytes(&ttf_reader, 18)
+	units_per_em := ttf_read_u16(&ttf_reader)
+	ttf_skip_bytes(&ttf_reader, 26)
 	lowest_rec_PPEM := ttf_read_u16(&ttf_reader)
 	font_direction_hint := ttf_read_i16(&ttf_reader)
 	loc_format := ttf_read_i16(&ttf_reader) //0 for short, 1 for long
+	fmt.println(
+		"SPACING INFO:",
+		"units per em:",
+		units_per_em,
+		"lowest rec PPEM:",
+		lowest_rec_PPEM,
+	)
 	//fmt.println(
 	//	"PPEM:",
 	//	lowest_rec_PPEM,
@@ -536,11 +553,11 @@ ttf_load_font :: proc(filepath: string, allocator: runtime.Allocator = context.a
 	for key, val in ttf_reader.cmap {
 		ttf_move_to_location(&ttf_reader, ttf_reader.tables["glyf"])
 		ttf_skip_bytes(&ttf_reader, cast(u32)offsets[val])
-		glyf_info[key] = ttf_read_glyf_data(&ttf_reader)
+		glyf_info[key] = ttf_read_glyf_data(&ttf_reader, units_per_em)
 	}
 
 	font := Font {
-		base_size  = 10,
+		base_size  = cast(int)lowest_rec_PPEM,
 		glyf_count = cast(int)ttf_reader.max_glyfs,
 		glyf_info  = glyf_info,
 	}
@@ -581,7 +598,8 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 	on_curve_counter: u8
 	off_curve_counter: u8
 
-	scale_multiplyer: f32 = 20
+	//pixel coord = em_coord * ppem / upem
+	scale_multiplyer: f32 = (6 * 10) / cast(f32)glyf_data.units_per_em
 
 	contour_start := 0
 
@@ -615,20 +633,20 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 						append(
 							&curve_points,
 							renderer.Point {
-								((cast(f32)x_coord + cast(f32)glyf_data.x_coords[end_index])) /
-								(scale_multiplyer * 2),
-								((cast(f32)y_coord + cast(f32)glyf_data.y_coords[end_index])) /
-								(scale_multiplyer * 2),
+								((cast(f32)x_coord + cast(f32)glyf_data.x_coords[end_index])) *
+								(scale_multiplyer / 2),
+								((cast(f32)y_coord + cast(f32)glyf_data.y_coords[end_index])) *
+								(scale_multiplyer / 2),
 							},
 						)
 					} else {
 						append(
 							&curve_points,
 							renderer.Point {
-								((cast(f32)x_coord + cast(f32)glyf_data.x_coords[index - 1]) /
-									(scale_multiplyer * 2)),
-								((cast(f32)y_coord + cast(f32)glyf_data.y_coords[index - 1]) /
-									(scale_multiplyer * 2)),
+								((cast(f32)x_coord + cast(f32)glyf_data.x_coords[index - 1]) *
+									(scale_multiplyer / 2)),
+								((cast(f32)y_coord + cast(f32)glyf_data.y_coords[index - 1]) *
+									(scale_multiplyer / 2)),
 							},
 						)
 					}
@@ -636,8 +654,8 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 				append(
 					&curve_points,
 					renderer.Point {
-						(cast(f32)x_coord / scale_multiplyer),
-						(cast(f32)y_coord / scale_multiplyer),
+						(cast(f32)x_coord * scale_multiplyer),
+						(cast(f32)y_coord * scale_multiplyer),
 					},
 				)
 			} else {
@@ -654,20 +672,20 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 						append(
 							&curve_points,
 							renderer.Point {
-								((cast(f32)x_coord + cast(f32)glyf_data.x_coords[end_index])) /
-								(scale_multiplyer * 2),
-								((cast(f32)y_coord + cast(f32)glyf_data.y_coords[end_index])) /
-								(scale_multiplyer * 2),
+								((cast(f32)x_coord + cast(f32)glyf_data.x_coords[end_index])) *
+								(scale_multiplyer / 2),
+								((cast(f32)y_coord + cast(f32)glyf_data.y_coords[end_index])) *
+								(scale_multiplyer / 2),
 							},
 						)
 					} else {
 						append(
 							&curve_points,
 							renderer.Point {
-								((cast(f32)x_coord + cast(f32)glyf_data.x_coords[index - 1]) /
-									(scale_multiplyer * 2)),
-								((cast(f32)y_coord + cast(f32)glyf_data.y_coords[index - 1]) /
-									(scale_multiplyer * 2)),
+								((cast(f32)x_coord + cast(f32)glyf_data.x_coords[index - 1]) *
+									(scale_multiplyer / 2)),
+								((cast(f32)y_coord + cast(f32)glyf_data.y_coords[index - 1]) *
+									(scale_multiplyer / 2)),
 							},
 						)
 					}
@@ -675,8 +693,8 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 				append(
 					&curve_points,
 					renderer.Point {
-						(cast(f32)x_coord / scale_multiplyer),
-						(cast(f32)y_coord / scale_multiplyer),
+						(cast(f32)x_coord * scale_multiplyer),
+						(cast(f32)y_coord * scale_multiplyer),
 					},
 				)
 			}

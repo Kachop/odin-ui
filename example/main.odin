@@ -208,13 +208,13 @@ main :: proc() {
 
 			//rwb.draw_point(400, 300, 5)
 
-			rwb.draw_glyf(400, 300, 'A')
-			rwb.draw_glyf(450, 300, 'j')
-			rwb.draw_glyf(490, 300, 'i')
-			rwb.draw_glyf(550, 300, 'O')
-			rwb.draw_glyf(600, 300, 'G')
-			rwb.draw_glyf(650, 300, 'y')
-			rwb.draw_glyf(700, 300, 'm')
+			rwb.draw_glyf(400, 300, 'H')
+			rwb.draw_glyf(450, 300, 'a')
+			rwb.draw_glyf(490, 300, 'b')
+			rwb.draw_glyf(550, 300, 'g')
+			rwb.draw_glyf(600, 300, 'o')
+			rwb.draw_glyf(650, 300, 'o')
+			rwb.draw_glyf(700, 300, 'd')
 			//rwb.draw_glyf(450, 400, 'C')
 			//rwb.draw_glyf(700, 400, 'D')
 

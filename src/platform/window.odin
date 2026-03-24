@@ -4,6 +4,7 @@ package platform
 //Will eventually have platform specific stuff.
 
 import "base:runtime"
+import "core:c"
 import "core:fmt"
 import gl "vendor:OpenGL"
 import "vendor:glfw"
@@ -16,8 +17,10 @@ Window_Error :: enum {
 Window_State :: struct {
 	initialised:             bool,
 	window:                  glfw.WindowHandle,
-	window_width:            f32,
-	window_height:           f32,
+	window_width:            f32, //Pixels
+	window_height:           f32, //Pixels
+	default_dpi:             [2]f32,
+	current_dpi:             [2]f32,
 	mouse_pos:               [2]f64,
 	keys_to_update:          [dynamic]Keyboard_Key,
 	char_queue:              [dynamic]rune,
@@ -83,6 +86,10 @@ create_window :: proc(width, height: i32, title: cstring) -> (^Window_State, Win
 
 	glfw.SetFramebufferSizeCallback(state.window, framebuffer_size_callback)
 	glfw.SetWindowSizeCallback(state.window, window_size_callback)
+	glfw.SetWindowContentScaleCallback(state.window, window_content_scale_callback)
+
+	x_scale, y_scale := glfw.GetWindowContentScale(state.window)
+	state.current_dpi = {x_scale * state.default_dpi.x, y_scale * state.default_dpi.y}
 
 	glfw.SwapInterval(1)
 
@@ -105,6 +112,11 @@ get_window_size :: proc() -> (width: f32, height: f32) {
 	width = state.window_width
 	height = state.window_height
 	return
+}
+
+get_window_dpi :: proc() -> [2]f32 {
+	x_scale, y_scale := glfw.GetWindowContentScale(state.window)
+	return {x_scale * state.default_dpi.x, y_scale * state.default_dpi.y}
 }
 
 window_should_close :: proc() -> bool {
@@ -145,6 +157,12 @@ set_window_size_callback :: proc(callback: proc "c" (_: glfw.WindowHandle, width
 	glfw.SetWindowSizeCallback(state.window, callback)
 }
 
+set_window_content_scale_callback :: proc(
+	callback: proc "c" (_: glfw.WindowHandle, x_scale, y_scale: f32),
+) {
+	glfw.SetWindowContentScaleCallback(state.window, callback)
+}
+
 window_size_callback :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
 	state.window_width = f32(width)
 	state.window_height = f32(height)
@@ -155,4 +173,8 @@ framebuffer_size_callback :: proc "c" (window: glfw.WindowHandle, width, height:
 	state.window_width = f32(width)
 	state.window_height = f32(height)
 	gl.Viewport(0, 0, width, height)
+}
+
+window_content_scale_callback :: proc "c" (window: glfw.WindowHandle, x_scale, y_scale: f32) {
+	state.current_dpi = {x_scale * state.default_dpi.x, y_scale * state.default_dpi.y}
 }
