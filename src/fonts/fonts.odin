@@ -2,12 +2,13 @@ package font
 
 import platform "../platform"
 import renderer "../renderer"
-import "base:runtime"
 import "core:encoding/endian"
 import "core:flags"
 import "core:flags/example"
 import "core:fmt"
 import "core:io"
+import "core:mem"
+import vmem "core:mem/virtual"
 import os "core:os"
 import "core:unicode/utf8"
 
@@ -17,16 +18,19 @@ Font :: struct {
 	base_size:  int,
 	glyf_count: int,
 	glyf_info:  map[rune]Glyf_Data, //Bezier points calculated
+	arena:      vmem.Arena,
+	allocator:  mem.Allocator,
 }
 
 TTF_Reader :: struct {
-	cursor:    u32,
-	buf:       []u8,
-	len:       u32,
-	tables:    map[string]u32,
-	cmap:      map[rune]u32,
-	max_glyfs: u16,
-	allocator: runtime.Allocator,
+	cursor:    u32, //Current reading location.
+	buf:       []u8, //TTF file data.
+	len:       u32, //Total file length (for bounds checking).
+	tables:    map[string]u32, //All of the tables from the TTF file.
+	cmap:      map[rune]u32, //All of the character mappings.
+	max_glyfs: u16, //Max number of glyfs.
+	arena:     vmem.Arena, //Arena for all the reader opperations.
+	allocator: mem.Allocator, //Everything can be disposed of once the file is read.
 }
 
 Glyf_Coord :: union {
@@ -46,22 +50,60 @@ Glyf_Data :: struct {
 	instruction_length:         u16,
 	instructions:               []u8,
 	flags:                      []u8,
-	x_coords, y_coords:         []f32,
+	em_coords_x, em_coords_y:   []f32,
 	cached:                     bool,
 	bezier_curve_points:        [][]renderer.Point, //calculated the first time the glyf is drawn
 	units_per_em:               u16,
+	allocator:                  mem.Allocator,
 }
 
-load_ttf :: proc(
-	reader: ^TTF_Reader,
-	filename: string,
-	allocator: runtime.Allocator = context.allocator,
-) {
+init_ttf_reader :: proc(ttf_reader: ^TTF_Reader) {
+	@(static) ttf_arean: vmem.Arena
+	@(static) ttf_alloc: mem.Allocator
+
+	arena_err := vmem.arena_init_static(&ttf_arean, 50 * mem.Megabyte)
+	if arena_err == .None {
+		ttf_alloc = vmem.arena_allocator(&ttf_arean)
+	}
+
+	ttf_reader.arena = ttf_arean
+	ttf_reader.allocator = ttf_alloc
+
+	ttf_reader.tables = make(map[string]u32, ttf_reader.allocator)
+	ttf_reader.cmap = make(map[rune]u32, ttf_reader.allocator)
+
+	fmt.println("TTF alloc:", ttf_reader.arena.total_reserved, ttf_reader.arena.total_used)
+}
+
+destroy_ttf_reader :: proc(ttf_reader: ^TTF_Reader) {
+	delete_map(ttf_reader.tables)
+	delete_map(ttf_reader.cmap)
+	vmem.arena_free_all(&ttf_reader.arena)
+}
+
+init_font :: proc(font: ^Font) {
+	@(static) font_arena: vmem.Arena
+	@(static) font_alloc: mem.Allocator
+
+	arena_err := vmem.arena_init_static(&font_arena, 50 * mem.Megabyte)
+	if arena_err == .None {
+		font_alloc = vmem.arena_allocator(&font_arena)
+	}
+
+	font.arena = font_arena
+	font.allocator = font_alloc
+}
+
+destroy_font :: proc(font: ^Font) {
+	vmem.arena_free_all(&font.arena)
+}
+
+load_ttf_file :: proc(reader: ^TTF_Reader, filename: string) {
 	if os.exists(filename) {
 		file_error: os.Error
 		reader.buf, file_error = os.read_entire_file_from_path(
 			filename,
-			allocator = context.temp_allocator,
+			allocator = reader.allocator,
 		)
 
 		if file_error == os.ERROR_NONE {
@@ -142,6 +184,15 @@ ttf_read_u32 :: proc(reader: ^TTF_Reader) -> u32 {
 	return 0
 }
 
+ttf_read_u32_arr :: proc(reader: ^TTF_Reader, arr: []u32, len: u32) {
+	if reader.cursor < reader.len - 1 - (4 * len) {
+		for i in 0 ..< len {
+			arr[i], _ = endian.get_u32(reader.buf[reader.cursor:reader.cursor + 4], .Big)
+			reader.cursor += 4
+		}
+	}
+}
+
 ttf_read_tag :: proc(reader: ^TTF_Reader) -> string {
 	tag_u32 := ttf_read_u32(reader)
 
@@ -178,8 +229,6 @@ ttf_read_cmap :: proc(reader: ^TTF_Reader) {
 	version := ttf_read_u16(reader)
 	num_sub_tables := ttf_read_u16(reader)
 
-	fmt.println("Version:", version, "\nNum of sub tables:", num_sub_tables)
-
 	for i in 0 ..< num_sub_tables {
 		platform_ID := ttf_read_u16(reader)
 		platform_specific_ID := ttf_read_u16(reader)
@@ -199,16 +248,16 @@ ttf_read_cmap :: proc(reader: ^TTF_Reader) {
 			ttf_move_to_location(reader, reader.tables["cmap"] + offset) //Offset seems to be from location of cmap table, not offset post reading info
 			break
 		}
+		//TODO: Implement stuff for other platforms
 	}
 
-	//ttf_skip_bytes(reader, 28)
 	format := ttf_read_u16(reader)
-	//language := ttf_read_u16(reader)
-	fmt.println("Format:", format)
 
 	switch format {
 	case 0:
+		fmt.println("ERROR: FORMAT 0 CMAP NOT IMPLEMENTED")
 	case 2:
+		fmt.println("ERROR: FORMAT 2 CMAP NOT IMPLEMENTED")
 	case 4:
 		length := ttf_read_u16(reader)
 		language := ttf_read_u16(reader)
@@ -227,84 +276,60 @@ ttf_read_cmap :: proc(reader: ^TTF_Reader) {
 		id_range_offset := make([]u16, seg_count, allocator = reader.allocator)
 		reader_loc := reader.cursor //location set to start of range offset array
 		ttf_read_u16_arr(reader, id_range_offset, cast(u32)seg_count)
-		fmt.println(
-			"length:",
-			length,
-			"\nlanguage:",
-			language,
-			"\nSeg count:",
-			seg_count,
-			"\nSearch range:",
-			search_range,
-			"\nRange shift:",
-			range_shift,
-			"\nReserved pad:",
-			reserved_pad,
-		)
 
 		for i in 0 ..< seg_count {
-			fmt.println("Segment", i + 1)
-			fmt.println(
-				"End code:",
-				end_code[i],
-				"\nStart code:",
-				start_code[i],
-				"\nidDelta:",
-				id_delta[i],
-				"\nidRangeOffset:",
-				id_range_offset[i],
-				"\n",
-			)
-			for c in start_code[i] ..= end_code[i] { 	//c = character code
-				ttf_move_to_location(
-					reader,
-					reader_loc +
-					(16 * cast(u32)(cast(i16)c + id_delta[i] + cast(i16)id_range_offset[i])),
-				)
-				rune_loc := ttf_read_u16(reader)
-
+			for c in start_code[i] ..= end_code[i] { 	//c = character code	
 				if id_range_offset[i] == 0 {
-					reader.cmap[rune(c)] = cast(u32)(id_delta[i] + cast(i16)c) //Set the index for the rune which is used to look-up into the offset array
+					//if (id_delta[i] + cast(i16)c) < 0 {
+					//reader.cmap[rune(c)] = cast(u32)(id_delta[i] + cast(i16)c) + 65536
+					//} else {
+					reader.cmap[rune(c)] = cast(u32)(id_delta[i] + cast(i16)c) % 65536 //Set the index for the rune which is used to look-up into the offset array
+					//}
 				} else {
 					ttf_move_to_location(
 						reader,
 						reader_loc +
 						cast(u32)(i * 2) +
-						cast(u32)(id_range_offset[i] / 2) +
-						cast(u32)(c - start_code[i]),
+						cast(u32)(2 * (c - start_code[i])) +
+						cast(u32)(id_range_offset[i]),
 					)
-					glyf_index := ttf_read_u16(reader)
+					glyf_index_offset := ttf_read_u16(reader)
 
-					if glyf_index != 0 {
-						glyf_index = cast(u16)(cast(i16)glyf_index + id_delta[i])
+					if glyf_index_offset != 0 {
+						glyf_index := cast(u32)(cast(i16)glyf_index_offset + id_delta[i]) % 65536
 						reader.cmap[rune(c)] = cast(u32)glyf_index
 					} else {
-						fmt.println("Glyf not mapped")
+						//Glyf not mapped.
+						reader.cmap[rune(c)] = 0
 					}
 				}
 			}
 		}
-		fmt.println("Number of runes:", len(runes))
-
 	case 6:
+		fmt.println("ERROR: FORMAT 6 CMAP NOT IMPLEMENTED")
 	case 8:
+		fmt.println("ERROR: FORMAT 8 CMAP NOT IMPLEMENTED")
 	case 10:
+		fmt.println("ERROR: FORMAT 10 CMAP NOT IMPLEMENTED")
 	case 12:
+		fmt.println("ERROR: FORMAT 12 CMAP NOT IMPLEMENTED")
 	case 14:
+		fmt.println("ERROR: FORMAT 14 CMAP NOT IMPLEMENTED")
 	}
 
 }
 
-runes: [dynamic]rune
+//runes: [dynamic]rune
 
-ttf_get_coords :: proc(
+ttf_get_em_coords :: proc(
 	reader: ^TTF_Reader,
 	coords: []f32,
 	num_of_coords: u16,
 	flags: []u8,
 	coord_type: Coord_Type,
 ) {
-	coord_offsets := make([]i16, num_of_coords, allocator = context.temp_allocator)
+	//Turns the coordinate offsets into an array of glyf coordinates in em space.
+	coord_offsets := make([]i16, num_of_coords, allocator = reader.allocator)
 
 	for i in 0 ..< num_of_coords {
 		flag := flags[i]
@@ -352,9 +377,6 @@ ttf_get_coords :: proc(
 
 	coord: f32
 
-	//Units per em, number of coord units per em, em is random known measurement
-	//Lowest rec PPEM, pixels per em.
-
 	for i in 0 ..< num_of_coords {
 		switch coord_type {
 		case .X:
@@ -369,16 +391,13 @@ ttf_get_coords :: proc(
 ttf_read_glyf_data :: proc(
 	reader: ^TTF_Reader,
 	units_per_em: u16,
-	allocator: runtime.Allocator = context.allocator,
+	allocator: mem.Allocator,
 ) -> Glyf_Data {
-	//fmt.println("Reading glyf @", reader.cursor)
 	num_of_contours := ttf_read_i16(reader)
 	x_min := ttf_read_i16(reader)
 	y_min := ttf_read_i16(reader)
 	x_max := ttf_read_i16(reader)
 	y_max := ttf_read_i16(reader)
-
-	//fmt.println("Num of contours:", num_of_contours)
 
 	if num_of_contours == 0 {
 		//Non-visual character, can skip the rest, no data exists
@@ -397,22 +416,24 @@ ttf_read_glyf_data :: proc(
 			false,
 			{},
 			0,
+			allocator,
 		}
 	} else if num_of_contours < 0 {
 		//Compound glyf. TODO: Implement
+		fmt.println("ERROR: COMPOUND GLYFS NOT IMPLEMENTED")
 		return {}
 	}
 
-	end_pts_of_contours := make([]u16, num_of_contours, allocator)
+	end_pts_of_contours := make([]u16, num_of_contours, allocator = allocator)
 	ttf_read_u16_arr(reader, end_pts_of_contours, cast(u32)num_of_contours)
 	//fmt.println("End contour points:", end_pts_of_contours)
 	instructions_len := ttf_read_u16(reader)
-	instructions := make([]u8, instructions_len, allocator)
+	instructions := make([]u8, instructions_len, allocator = allocator)
 	ttf_read_u8_arr(reader, instructions, cast(u32)instructions_len)
 
 	num_of_coords := end_pts_of_contours[num_of_contours - 1] + 1
 
-	flags := make([]u8, num_of_coords, allocator)
+	flags := make([]u8, num_of_coords, allocator = allocator)
 
 	i: u16 = 0
 
@@ -432,26 +453,11 @@ ttf_read_glyf_data :: proc(
 		i += 1
 	}
 
-	//fmt.println(
-	////	"Glyf Data\n- Num of contours:",
-	//	num_of_contours,
-	//	"\n- Contour end pts:",
-	//	end_pts_of_contours,
-	//	"\n- Flags:",
-	//	flags,
-	//)
+	x_coords := make([]f32, num_of_coords, allocator = allocator)
+	y_coords := make([]f32, num_of_coords, allocator = allocator)
 
-	x_coords := make([]f32, num_of_coords, allocator)
-	y_coords := make([]f32, num_of_coords, allocator)
-
-	ttf_get_coords(reader, x_coords, num_of_coords, flags, .X)
-	ttf_get_coords(reader, y_coords, num_of_coords, flags, .Y)
-
-	//fmt.println("Coords:")
-
-	//for i in 0 ..< num_of_coords {
-	//	fmt.println(i, "| x:", x_coords[i], ", y:", y_coords[i])
-	//}
+	ttf_get_em_coords(reader, x_coords, num_of_coords, flags, .X)
+	ttf_get_em_coords(reader, y_coords, num_of_coords, flags, .Y)
 
 	return Glyf_Data {
 		num_of_contours,
@@ -468,26 +474,24 @@ ttf_read_glyf_data :: proc(
 		false,
 		{},
 		units_per_em,
+		allocator,
 	}
 }
 
-ttf_load_font :: proc(filepath: string, allocator: runtime.Allocator = context.allocator) -> Font {
-	ttf_reader: TTF_Reader
-	ttf_reader.allocator = allocator
+ttf_load_font :: proc(filepath: string) -> Font {
+	font: Font
+	init_font(&font)
 
-	load_ttf(&ttf_reader, filepath)
+	ttf_reader: TTF_Reader
+
+	init_ttf_reader(&ttf_reader)
+	load_ttf_file(&ttf_reader, filepath)
 
 	scalar_type := ttf_read_u32(&ttf_reader)
 	num_tables := ttf_read_u16(&ttf_reader)
 	search_range := ttf_read_u16(&ttf_reader)
 	entry_selector := ttf_read_u16(&ttf_reader)
 	range_shifter := ttf_read_u16(&ttf_reader)
-
-	//fmt.println("Number of tables:", num_tables)
-	//fmt.println("Search range", search_range)
-
-	ttf_reader.tables = make(map[string]u32, allocator = context.temp_allocator) //map[table_name]location
-	ttf_reader.cmap = make(map[rune]u32, allocator = context.temp_allocator)
 
 	for _ in 1 ..= num_tables {
 		tag := ttf_read_tag(&ttf_reader)
@@ -496,14 +500,11 @@ ttf_load_font :: proc(filepath: string, allocator: runtime.Allocator = context.a
 		length := ttf_read_u32(&ttf_reader)
 		ttf_reader.tables[tag] = offset
 	}
-	//fmt.println(ttf_reader.tables)
 
 	ttf_move_to_location(&ttf_reader, ttf_reader.tables["maxp"])
 
 	version := ttf_read_u32(&ttf_reader)
 	ttf_reader.max_glyfs = ttf_read_u16(&ttf_reader)
-
-	//fmt.println("Max glyfs:", ttf_reader.max_glyfs)
 
 	ttf_move_to_location(&ttf_reader, ttf_reader.tables["head"])
 
@@ -513,39 +514,24 @@ ttf_load_font :: proc(filepath: string, allocator: runtime.Allocator = context.a
 	lowest_rec_PPEM := ttf_read_u16(&ttf_reader)
 	font_direction_hint := ttf_read_i16(&ttf_reader)
 	loc_format := ttf_read_i16(&ttf_reader) //0 for short, 1 for long
-	fmt.println(
-		"SPACING INFO:",
-		"units per em:",
-		units_per_em,
-		"lowest rec PPEM:",
-		lowest_rec_PPEM,
-	)
-	//fmt.println(
-	//	"PPEM:",
-	//	lowest_rec_PPEM,
-	//	"font direction:",
-	//	font_direction_hint,
-	//	"loc format:",
-	//	loc_format,
-	//)
-
 	ttf_read_cmap(&ttf_reader)
 
 	//fmt.println("Rune 65535", rune(64257))
 
 	ttf_move_to_location(&ttf_reader, ttf_reader.tables["loca"])
 
-	offsets := make([]u16, ttf_reader.max_glyfs + 1, allocator = context.temp_allocator)
+	offsets := make([]u32, ttf_reader.max_glyfs + 1, allocator = ttf_reader.allocator)
 
 	if loc_format == 0 {
 		//short format table
-		ttf_read_u16_arr(&ttf_reader, offsets, cast(u32)ttf_reader.max_glyfs + 1)
+		temp_offsets := make([]u16, ttf_reader.max_glyfs + 1, allocator = ttf_reader.allocator)
+		ttf_read_u16_arr(&ttf_reader, temp_offsets, cast(u32)ttf_reader.max_glyfs + 1)
 
-		for offset, i in offsets {
-			offsets[i] *= 2
+		for offset, i in temp_offsets {
+			offsets[i] = cast(u32)temp_offsets[i] * 2
 		}
 	} else if loc_format == 1 {
-		//long format table TODO: Implement
+		ttf_read_u32_arr(&ttf_reader, offsets, cast(u32)ttf_reader.max_glyfs + 1)
 	}
 
 	glyf_info := make(map[rune]Glyf_Data, allocator = context.allocator)
@@ -553,14 +539,15 @@ ttf_load_font :: proc(filepath: string, allocator: runtime.Allocator = context.a
 	for key, val in ttf_reader.cmap {
 		ttf_move_to_location(&ttf_reader, ttf_reader.tables["glyf"])
 		ttf_skip_bytes(&ttf_reader, cast(u32)offsets[val])
-		glyf_info[key] = ttf_read_glyf_data(&ttf_reader, units_per_em)
+		glyf_info[key] = ttf_read_glyf_data(&ttf_reader, units_per_em, font.allocator)
 	}
 
-	font := Font {
-		base_size  = cast(int)lowest_rec_PPEM,
-		glyf_count = cast(int)ttf_reader.max_glyfs,
-		glyf_info  = glyf_info,
-	}
+	font.base_size = cast(int)lowest_rec_PPEM
+	font.glyf_count = cast(int)ttf_reader.max_glyfs
+	font.glyf_info = glyf_info
+
+	destroy_ttf_reader(&ttf_reader)
+
 	//fmt.println("FINISHED LOADING FONT")
 	return font
 }
@@ -617,8 +604,8 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 			if i > cast(int)end_index { 	//If the end of the array is reached now index from the start
 				index -= (cast(int)end_index - contour_start) + 1
 			}
-			x_coord := glyf_data.x_coords[index]
-			y_coord := glyf_data.y_coords[index]
+			x_coord := glyf_data.em_coords_x[index]
+			y_coord := glyf_data.em_coords_y[index]
 
 			if ttf_is_flag_set(glyf_data.flags[index], 0) {
 				//fmt.println(index, "On curve")
@@ -633,9 +620,9 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 						append(
 							&curve_points,
 							renderer.Point {
-								((cast(f32)x_coord + cast(f32)glyf_data.x_coords[end_index])) *
+								((cast(f32)x_coord + cast(f32)glyf_data.em_coords_x[end_index])) *
 								(scale_multiplyer / 2),
-								((cast(f32)y_coord + cast(f32)glyf_data.y_coords[end_index])) *
+								((cast(f32)y_coord + cast(f32)glyf_data.em_coords_y[end_index])) *
 								(scale_multiplyer / 2),
 							},
 						)
@@ -643,9 +630,9 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 						append(
 							&curve_points,
 							renderer.Point {
-								((cast(f32)x_coord + cast(f32)glyf_data.x_coords[index - 1]) *
+								((cast(f32)x_coord + cast(f32)glyf_data.em_coords_x[index - 1]) *
 									(scale_multiplyer / 2)),
-								((cast(f32)y_coord + cast(f32)glyf_data.y_coords[index - 1]) *
+								((cast(f32)y_coord + cast(f32)glyf_data.em_coords_y[index - 1]) *
 									(scale_multiplyer / 2)),
 							},
 						)
@@ -672,9 +659,9 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 						append(
 							&curve_points,
 							renderer.Point {
-								((cast(f32)x_coord + cast(f32)glyf_data.x_coords[end_index])) *
+								((cast(f32)x_coord + cast(f32)glyf_data.em_coords_x[end_index])) *
 								(scale_multiplyer / 2),
-								((cast(f32)y_coord + cast(f32)glyf_data.y_coords[end_index])) *
+								((cast(f32)y_coord + cast(f32)glyf_data.em_coords_y[end_index])) *
 								(scale_multiplyer / 2),
 							},
 						)
@@ -682,9 +669,9 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 						append(
 							&curve_points,
 							renderer.Point {
-								((cast(f32)x_coord + cast(f32)glyf_data.x_coords[index - 1]) *
+								((cast(f32)x_coord + cast(f32)glyf_data.em_coords_x[index - 1]) *
 									(scale_multiplyer / 2)),
-								((cast(f32)y_coord + cast(f32)glyf_data.y_coords[index - 1]) *
+								((cast(f32)y_coord + cast(f32)glyf_data.em_coords_y[index - 1]) *
 									(scale_multiplyer / 2)),
 							},
 						)
@@ -725,8 +712,8 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 
 	current_contour = 0
 
-	bezier_curve_points := make([dynamic][]renderer.Point, allocator = context.allocator)
-	current_contour_curve_points := make([dynamic]renderer.Point, allocator = context.allocator)
+	bezier_curve_points := make([dynamic][]renderer.Point, allocator = glyf_data.allocator)
+	current_contour_curve_points := make([dynamic]renderer.Point, allocator = glyf_data.allocator)
 
 	contour_start = 0
 
@@ -754,7 +741,10 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 		}
 
 		append(&bezier_curve_points, current_contour_curve_points[:])
-		current_contour_curve_points = make([dynamic]renderer.Point, allocator = context.allocator)
+		current_contour_curve_points = make(
+			[dynamic]renderer.Point,
+			allocator = glyf_data.allocator,
+		)
 		contour_start = end_index + 1
 	}
 	glyf_data.bezier_curve_points = bezier_curve_points[:]

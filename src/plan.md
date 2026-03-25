@@ -14,6 +14,13 @@ Ideal process for fixing overspills:
 
 Now working, bug was to do with wrong calculation method for how much each container needed to be reduced by.
 
+## Font rendering
+> 1. [ ] Implement missing logic for other types of font files.
+> 2. [ ] Implement filling in algorythm to determine which pixels should be filled in.
+> 3. [ ] Account for font spacing from the info in the file.
+> 4. [ ] Implement "instructions" which go with each coord to make sure it looks good at low sizes.
+> 5. [ ] Add a lot of the glyf rendering code to shaders. (Add glyf filling for example)
+
 ## Model
 
 > 1. Handle input. (Hover logic and clicking uses previous frames tree).

@@ -54,7 +54,13 @@ load_font :: proc(filepath: string) {
 }
 
 draw_glyf :: proc(x, y: f32, char: rune) {
-	glyf_data := &state.font.glyf_info[char]
+	glyf_data: ^fonts.Glyf_Data
+	if char in state.font.glyf_info {
+		glyf_data = &state.font.glyf_info[char]
+	} else {
+		//Assign missing glyf
+		glyf_data = &state.font.glyf_info[rune(65535)]
+	}
 	if glyf_data.cached {
 		for contour_curve_points in glyf_data.bezier_curve_points {
 			for i := 1; i < len(contour_curve_points); i += 1 {
