@@ -33,6 +33,33 @@ TTF_Reader :: struct {
 	allocator: mem.Allocator, //Everything can be disposed of once the file is read.
 }
 
+Glfy_Flags :: enum u8 {
+	ON_CURVE_POINT                       = 0b00000001,
+	X_SHORT_VECTOR                       = 0b00000010,
+	Y_SHORT_VECTOR                       = 0b00000100,
+	REPEAT_FLAG                          = 0b00001000,
+	X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR = 0b00010000,
+	Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR = 0b00100000,
+	OVERLAP_SIMPLE                       = 0b01000000,
+	RESERVED                             = 0b10000000,
+}
+
+Compound_Glyf_Flags :: enum u16 {
+	ARG_1_AND_2_ARE_WORDS     = 0b0000000000000001,
+	ARGS_ARE_XY_VALUES        = 0b0000000000000010,
+	ROUND_XY_TO_GRID          = 0b0000000000000100,
+	WE_HAVE_A_SCALE           = 0b00000000000010000,
+	MORE_COMPONENTS           = 0b00000000001000000,
+	WE_HAVE_AN_X_AND_Y_SCALE  = 0b0000000001000000,
+	WE_HAVE_A_TWO_BY_TWO      = 0b0000000010000000,
+	WE_HAVE_INSTRUCTIONS      = 0b0000000100000000,
+	USE_MY_METRICS            = 0b0000001000000000,
+	OVERLAP_COMPOUND          = 0b0000010000000000,
+	SCALED_COMPONENT_OFFSET   = 0b0000100000000000,
+	UNSCALED_COMPONENT_OFFSET = 0b0001000000000000,
+	RESERVED                  = 0b1110000000010000,
+}
+
 Glyf_Coord :: union {
 	u8,
 	i16,
@@ -155,6 +182,16 @@ ttf_read_u16_arr :: proc(reader: ^TTF_Reader, arr: []u16, len: u32) {
 	}
 }
 
+ttf_read_i8 :: proc(reader: ^TTF_Reader) -> i8 {
+	if reader.cursor < reader.len - 2 {
+		val := reader.buf[reader.cursor]
+		reader.cursor += 1
+
+		return cast(i8)val
+	}
+	return 0
+}
+
 ttf_read_i16 :: proc(reader: ^TTF_Reader) -> i16 {
 	if reader.cursor < reader.len - 3 {
 		val, _ := endian.get_i16(reader.buf[reader.cursor:reader.cursor + 2], .Big)
@@ -219,8 +256,17 @@ ttf_move_to_location :: proc(reader: ^TTF_Reader, location: u32) {
 	}
 }
 
-ttf_is_flag_set :: proc(flag: byte, bit_index: u8) -> bool {
-	return ((flag >> bit_index) & 1) == 1
+ttf_is_flag_set :: proc {
+	ttf_is_flag_set_u8,
+	ttf_is_flag_set_u16,
+}
+
+ttf_is_flag_set_u8 :: proc(flag: byte, bit: u8) -> bool {
+	return flag & bit != 0
+}
+
+ttf_is_flag_set_u16 :: proc(flag: u16, bit: u16) -> bool {
+	return flag & bit != 0
 }
 
 ttf_read_cmap :: proc(reader: ^TTF_Reader) {
@@ -335,8 +381,8 @@ ttf_get_em_coords :: proc(
 		flag := flags[i]
 		switch coord_type {
 		case .X:
-			if ttf_is_flag_set(flag, 1) {
-				if ttf_is_flag_set(flag, 4) {
+			if ttf_is_flag_set(flag, cast(u8)Glfy_Flags.X_SHORT_VECTOR) {
+				if ttf_is_flag_set(flag, cast(u8)Glfy_Flags.X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR) {
 					//Possitive 1 byte coord. (u8)
 					coord_offsets[i] = cast(i16)ttf_read_u8(reader)
 				} else {
@@ -345,7 +391,7 @@ ttf_get_em_coords :: proc(
 					coord_offsets[i] = cast(i16)val * -1
 				}
 			} else {
-				if ttf_is_flag_set(flag, 4) {
+				if ttf_is_flag_set(flag, cast(u8)Glfy_Flags.X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR) {
 					//Skip offset (value is 0)
 					coord_offsets[i] = cast(i16)0
 				} else {
@@ -354,8 +400,8 @@ ttf_get_em_coords :: proc(
 				}
 			}
 		case .Y:
-			if ttf_is_flag_set(flag, 2) {
-				if ttf_is_flag_set(flag, 5) {
+			if ttf_is_flag_set(flag, cast(u8)Glfy_Flags.Y_SHORT_VECTOR) {
+				if ttf_is_flag_set(flag, cast(u8)Glfy_Flags.Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR) {
 					//Possitive 1 byte coord. (u8)
 					coord_offsets[i] = cast(i16)ttf_read_u8(reader)
 				} else {
@@ -364,7 +410,7 @@ ttf_get_em_coords :: proc(
 					coord_offsets[i] = cast(i16)val * -1
 				}
 			} else {
-				if ttf_is_flag_set(flag, 5) {
+				if ttf_is_flag_set(flag, cast(u8)Glfy_Flags.Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR) {
 					//Skip offset
 					coord_offsets[i] = cast(i16)0
 				} else {
@@ -419,14 +465,74 @@ ttf_read_glyf_data :: proc(
 			allocator,
 		}
 	} else if num_of_contours < 0 {
-		//Compound glyf. TODO: Implement
-		fmt.println("ERROR: COMPOUND GLYFS NOT IMPLEMENTED")
+		flags := ttf_read_u16(reader)
+		glyf_index := ttf_read_u16(reader)
+
+		compound_glyf_arg :: union {
+			u8,
+			i8,
+			u16,
+			i16,
+		}
+
+		arg_1: compound_glyf_arg
+		arg_2: compound_glyf_arg
+
+		if ttf_is_flag_set(flags, cast(u16)Compound_Glyf_Flags.ARG_1_AND_2_ARE_WORDS) {
+			//If set args are 16-bit, if not they're 8-bit
+			//Args are XY values
+			if ttf_is_flag_set(flags, cast(u16)Compound_Glyf_Flags.ARGS_ARE_XY_VALUES) {
+				//Args are signed, i16
+				arg_1 = ttf_read_i16(reader)
+				arg_2 = ttf_read_i16(reader)
+			} else {
+				//Args are unsigned, u16
+				arg_1 = ttf_read_u16(reader)
+				arg_2 = ttf_read_u16(reader)
+			}
+
+			Scaled_component_offset := ttf_is_flag_set(
+				flags,
+				cast(u16)Compound_Glyf_Flags.SCALED_COMPONENT_OFFSET,
+			)
+			Unscaled_component_offset := ttf_is_flag_set(
+				flags,
+				cast(u16)Compound_Glyf_Flags.UNSCALED_COMPONENT_OFFSET,
+			)
+		} else {
+			if ttf_is_flag_set(flags, cast(u16)Compound_Glyf_Flags.ARGS_ARE_XY_VALUES) {
+				//Args are signed, i8
+				arg_1 = ttf_read_i8(reader)
+				arg_2 = ttf_read_i8(reader)
+			} else {
+				//Args are unsigned, u8
+				arg_1 = ttf_read_u8(reader)
+				arg_2 = ttf_read_u8(reader)
+			}
+		}
+
+		instructions_following := ttf_is_flag_set(
+			flags,
+			cast(u16)Compound_Glyf_Flags.WE_HAVE_INSTRUCTIONS,
+		)
+
+		//Get all of info for first part of compound glyf
+
+		more_components := ttf_is_flag_set(flags, cast(u16)Compound_Glyf_Flags.MORE_COMPONENTS)
+
+		//for more_components {
+		//Do child glyf stuff
+
+		//	more_components = ttf_is_flag_set(flags, cast(u16)Compound_Glyf_Flags.MORE_COMPONENTS)
+		//}
+
+		//Construct whole glyf
+
 		return {}
 	}
 
 	end_pts_of_contours := make([]u16, num_of_contours, allocator = allocator)
 	ttf_read_u16_arr(reader, end_pts_of_contours, cast(u32)num_of_contours)
-	//fmt.println("End contour points:", end_pts_of_contours)
 	instructions_len := ttf_read_u16(reader)
 	instructions := make([]u8, instructions_len, allocator = allocator)
 	ttf_read_u8_arr(reader, instructions, cast(u32)instructions_len)
@@ -442,7 +548,7 @@ ttf_read_glyf_data :: proc(
 
 		flags[i] = flag
 
-		if ttf_is_flag_set(flag, 3) {
+		if ttf_is_flag_set(flag, cast(u8)Glfy_Flags.REPEAT_FLAG) {
 			repeats := ttf_read_u8(reader)
 			for r: u8 = 0; r < repeats; r += 1 {
 				i += 1
@@ -516,8 +622,6 @@ ttf_load_font :: proc(filepath: string) -> Font {
 	loc_format := ttf_read_i16(&ttf_reader) //0 for short, 1 for long
 	ttf_read_cmap(&ttf_reader)
 
-	//fmt.println("Rune 65535", rune(64257))
-
 	ttf_move_to_location(&ttf_reader, ttf_reader.tables["loca"])
 
 	offsets := make([]u32, ttf_reader.max_glyfs + 1, allocator = ttf_reader.allocator)
@@ -548,7 +652,6 @@ ttf_load_font :: proc(filepath: string) -> Font {
 
 	destroy_ttf_reader(&ttf_reader)
 
-	//fmt.println("FINISHED LOADING FONT")
 	return font
 }
 
@@ -593,7 +696,7 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 	for end_index in glyf_data.end_pts_of_contours {
 		on_curve_offset: int //Offset to first on-curve point.
 		for i in contour_start ..< cast(int)end_index {
-			if ttf_is_flag_set(glyf_data.flags[i], 0) {
+			if ttf_is_flag_set(glyf_data.flags[i], cast(u8)Glfy_Flags.ON_CURVE_POINT) {
 				on_curve_offset = i - contour_start
 				break
 			}
@@ -607,8 +710,7 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 			x_coord := glyf_data.em_coords_x[index]
 			y_coord := glyf_data.em_coords_y[index]
 
-			if ttf_is_flag_set(glyf_data.flags[index], 0) {
-				//fmt.println(index, "On curve")
+			if ttf_is_flag_set(glyf_data.flags[index], cast(u8)Glfy_Flags.ON_CURVE_POINT) {
 				//On curve point
 				off_curve_counter = 0
 				on_curve_counter += 1
@@ -646,7 +748,6 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 					},
 				)
 			} else {
-				//fmt.println(index, "Off curve")
 				//Off curve point
 				on_curve_counter = 0
 				off_curve_counter += 1
@@ -690,7 +791,8 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 		on_curve_counter = 0
 		off_curve_counter = 0
 
-		if on_curve_offset == 0 && ttf_is_flag_set(glyf_data.flags[end_index], 0) {
+		if on_curve_offset == 0 &&
+		   ttf_is_flag_set(glyf_data.flags[end_index], cast(u8)Glfy_Flags.ON_CURVE_POINT) {
 			if len(curve_contour_end_points) > 0 {
 				append(
 					&curve_points,
