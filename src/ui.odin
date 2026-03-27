@@ -62,23 +62,16 @@ draw_glyf :: proc(x, y: f32, char: rune) {
 		glyf_data = &state.font.glyf_info[rune(65535)]
 	}
 	if glyf_data.cached {
-		for contour_curve_points in glyf_data.bezier_curve_points {
-			for i := 1; i < len(contour_curve_points); i += 1 {
-				draw_line(
-					{x, y} + contour_curve_points[i - 1],
-					{x, y} + contour_curve_points[i],
-					5,
-				)
-
-				if i == len(contour_curve_points) - 1 {
-					draw_line(
-						{x, y} + contour_curve_points[i],
-						{x, y} + contour_curve_points[0],
-						0,
-					)
-				}
-			}
-		}
+		append_dynamic_slice(
+			&state.non_tree_render_commands,
+			render_command(
+				.Text,
+				{x, y, 0, 0},
+				ui_ctrl_style(radius = {5, 5, 5, 5}),
+				glyf_data.bezier_curve_points,
+				glyf_data.bezier_contour_end_pts,
+			),
+		)
 	} else {
 		fonts.calculate_curve_points(glyf_data)
 		glyf_data.cached = true
@@ -89,22 +82,22 @@ draw_glyf :: proc(x, y: f32, char: rune) {
 draw_point :: proc(x, y, radius: f32) {
 	append_dynamic_slice(
 		&state.non_tree_render_commands,
-		Render_Command {
+		render_command(
 			.Text,
 			{x, y, 0, 0},
 			ui_ctrl_style(radius = {radius, radius, radius, radius}),
-		},
+		),
 	)
 }
 
 draw_line :: proc(p0, p1: renderer.Point, radius: f32) {
 	append_dynamic_slice(
 		&state.non_tree_render_commands,
-		Render_Command {
+		render_command(
 			.Text,
 			{p0.x, p0.y, p1.x, p1.y},
 			ui_ctrl_style(radius = {radius, radius, radius, radius}),
-		},
+		),
 	)
 	//fmt.println("Adding line:", "p0:", p0, ", p1:", p1)
 	//fmt.println("Lines to draw:", dynamic_slice_len(state.non_tree_render_commands))
@@ -113,7 +106,7 @@ draw_line :: proc(p0, p1: renderer.Point, radius: f32) {
 freestyle_rect :: proc(x, y, width, height: f32) {
 	append_dynamic_slice_back(
 		&state.last_render_commands,
-		Render_Command{.Text, {x, y, width, height}, ui_ctrl_style()},
+		render_command(.Text, {x, y, width, height}, ui_ctrl_style()),
 	)
 }
 
@@ -480,9 +473,21 @@ Render_Type :: enum {
 
 @(private)
 Render_Command :: struct {
-	type:   Render_Type,
+	type:     Render_Type,
+	bounds:   Rectangle,
+	style:    UI_Ctrl_Styles,
+	vertices: []renderer.Point,
+	indices:  []u32,
+}
+
+render_command :: proc(
+	type: Render_Type,
 	bounds: Rectangle,
-	style:  UI_Ctrl_Styles,
+	style: UI_Ctrl_Styles,
+	vertices: []renderer.Point = {},
+	indices: []u32 = {},
+) -> Render_Command {
+	return Render_Command{type, bounds, style, vertices, indices}
 }
 
 @(private)
@@ -606,6 +611,7 @@ render_loop :: proc() -> bool {
 			", Used:",
 			cache_arena.total_used,
 		)
+
 	}
 
 	return true
@@ -630,9 +636,11 @@ render_proc :: proc(t: ^thread.Thread) {
 						command.style.border_colour,
 					)
 				case .Text:
-					renderer.draw_line(
+					renderer.draw_glyf(
 						{command.bounds.x, command.bounds.y},
-						{command.bounds.width, command.bounds.height},
+						command.vertices,
+						command.indices,
+						5,
 					)
 				case .Img:
 					fmt.println("Drawing img")
@@ -784,7 +792,7 @@ ui_handle_tree_layout :: proc(ctrl: ^UI_Ctrl) {
 	for ctrl in to_slice(&to_layout) {
 		append_dynamic_slice(
 			&state.render_commands,
-			Render_Command{.Rect, ctrl.bounds, ctrl.styles},
+			render_command(.Rect, ctrl.bounds, ctrl.styles),
 		)
 
 		if (.Focusable in ctrl.flags) {

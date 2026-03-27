@@ -79,21 +79,25 @@ Glyf_Data :: struct {
 	flags:                      []u8,
 	em_coords_x, em_coords_y:   []f32,
 	cached:                     bool,
-	bezier_curve_points:        [][]renderer.Point, //calculated the first time the glyf is drawn
+	bezier_curve_points:        []renderer.Point, //calculated the first time the glyf is drawn
+	bezier_contour_end_pts:     []u32,
 	units_per_em:               u16,
 	allocator:                  mem.Allocator,
 }
 
-init_ttf_reader :: proc(ttf_reader: ^TTF_Reader) {
-	@(static) ttf_arean: vmem.Arena
-	@(static) ttf_alloc: mem.Allocator
+ttf_arena: vmem.Arena
+font_arena: vmem.Arena
 
-	arena_err := vmem.arena_init_static(&ttf_arean, 50 * mem.Megabyte)
+ttf_alloc: mem.Allocator
+font_alloc: mem.Allocator
+
+init_ttf_reader :: proc(ttf_reader: ^TTF_Reader) {
+	arena_err := vmem.arena_init_static(&ttf_arena, 50 * mem.Megabyte)
 	if arena_err == .None {
-		ttf_alloc = vmem.arena_allocator(&ttf_arean)
+		ttf_alloc = vmem.arena_allocator(&ttf_arena)
 	}
 
-	ttf_reader.arena = ttf_arean
+	ttf_reader.arena = ttf_arena
 	ttf_reader.allocator = ttf_alloc
 
 	ttf_reader.tables = make(map[string]u32, ttf_reader.allocator)
@@ -105,13 +109,10 @@ init_ttf_reader :: proc(ttf_reader: ^TTF_Reader) {
 destroy_ttf_reader :: proc(ttf_reader: ^TTF_Reader) {
 	delete_map(ttf_reader.tables)
 	delete_map(ttf_reader.cmap)
-	vmem.arena_free_all(&ttf_reader.arena)
+	vmem.arena_free_all(&ttf_arena)
 }
 
 init_font :: proc(font: ^Font) {
-	@(static) font_arena: vmem.Arena
-	@(static) font_alloc: mem.Allocator
-
 	arena_err := vmem.arena_init_static(&font_arena, 50 * mem.Megabyte)
 	if arena_err == .None {
 		font_alloc = vmem.arena_allocator(&font_arena)
@@ -122,7 +123,7 @@ init_font :: proc(font: ^Font) {
 }
 
 destroy_font :: proc(font: ^Font) {
-	vmem.arena_free_all(&font.arena)
+	vmem.arena_free_all(&font_arena)
 }
 
 load_ttf_file :: proc(reader: ^TTF_Reader, filename: string) {
@@ -461,6 +462,7 @@ ttf_read_glyf_data :: proc(
 			{},
 			false,
 			{},
+			{},
 			0,
 			allocator,
 		}
@@ -579,6 +581,7 @@ ttf_read_glyf_data :: proc(
 		y_coords,
 		false,
 		{},
+		{},
 		units_per_em,
 		allocator,
 	}
@@ -638,12 +641,12 @@ ttf_load_font :: proc(filepath: string) -> Font {
 		ttf_read_u32_arr(&ttf_reader, offsets, cast(u32)ttf_reader.max_glyfs + 1)
 	}
 
-	glyf_info := make(map[rune]Glyf_Data, allocator = context.allocator)
+	glyf_info := make(map[rune]Glyf_Data, allocator = font_alloc)
 
 	for key, val in ttf_reader.cmap {
 		ttf_move_to_location(&ttf_reader, ttf_reader.tables["glyf"])
 		ttf_skip_bytes(&ttf_reader, cast(u32)offsets[val])
-		glyf_info[key] = ttf_read_glyf_data(&ttf_reader, units_per_em, font.allocator)
+		glyf_info[key] = ttf_read_glyf_data(&ttf_reader, units_per_em, font_alloc)
 	}
 
 	font.base_size = cast(int)lowest_rec_PPEM
@@ -810,16 +813,18 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 		append(&curve_contour_end_points, len(curve_points) - 1)
 	}
 
-	fmt.println(curve_contour_end_points)
-
 	current_contour = 0
 
-	bezier_curve_points := make([dynamic][]renderer.Point, allocator = glyf_data.allocator)
-	current_contour_curve_points := make([dynamic]renderer.Point, allocator = glyf_data.allocator)
+	bezier_curve_points := make([dynamic]renderer.Point, allocator = glyf_data.allocator)
+	bezier_curve_end_points := make(
+		[]u32,
+		len(curve_contour_end_points),
+		allocator = glyf_data.allocator,
+	)
 
 	contour_start = 0
 
-	for end_index in curve_contour_end_points {
+	for end_index, i in curve_contour_end_points {
 		for index := contour_start + 2; index < end_index; index += 2 {
 			bezier_points := calculate_bezier(
 				curve_points[index - 2],
@@ -829,7 +834,7 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 			)
 
 			for point in bezier_points {
-				append(&current_contour_curve_points, point)
+				append(&bezier_curve_points, point)
 			}
 		}
 
@@ -839,15 +844,12 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 			curve_points[contour_start],
 			30,
 		) {
-			append(&current_contour_curve_points, point)
+			append(&bezier_curve_points, point)
 		}
 
-		append(&bezier_curve_points, current_contour_curve_points[:])
-		current_contour_curve_points = make(
-			[dynamic]renderer.Point,
-			allocator = glyf_data.allocator,
-		)
+		bezier_curve_end_points[i] = cast(u32)len(bezier_curve_points) - 1
 		contour_start = end_index + 1
 	}
 	glyf_data.bezier_curve_points = bezier_curve_points[:]
+	glyf_data.bezier_contour_end_pts = bezier_curve_end_points
 }

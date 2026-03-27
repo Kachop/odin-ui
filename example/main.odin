@@ -129,8 +129,8 @@ main :: proc() {
 	//Boilerplater setup
 
 	rwb.load_font(
-		"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Momo_Signature/MomoSignature-Regular.ttf", //"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Paul/Paul.ttf",
-		//"/home/robert/Development/odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
+		"/home/robert/Development/odin/odin-ui/src/fonts/Momo_Signature/MomoSignature-Regular.ttf",
+		//"/home/robert/Development/odin/odin-ui/src/fonts/paul-font/paul_font.ttf",//"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Momo_Signature/MomoSignature-Regular.ttf", //"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Paul/Paul.ttf",
 		//"/mnt/Guido/Development/Odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
 	)
 
@@ -211,13 +211,20 @@ main :: proc() {
 			//rwb.draw_point(400, 300, 5)
 
 			//rwb.draw_glyf(300, 300, rune(5834))
+
 			rwb.draw_glyf(400, 300, 'B')
-			rwb.draw_glyf(450, 300, 'e')
-			rwb.draw_glyf(500, 300, 'c')
-			rwb.draw_glyf(550, 300, 'k')
-			rwb.draw_glyf(600, 300, 'o')
-			rwb.draw_glyf(650, 300, 'o')
-			rwb.draw_glyf(700, 300, 'd')
+			//rwb.draw_glyf(450, 300, 'e')
+			//rwb.draw_glyf(500, 300, 'c')
+			//rwb.draw_glyf(550, 300, 'k')
+			//rwb.draw_glyf(600, 300, 'y')
+
+			//rwb.draw_glyf(400, 400, 'H')
+			//rwb.draw_glyf(450, 400, 'a')
+			//rwb.draw_glyf(500, 400, 'b')
+			//rwb.draw_glyf(550, 400, 'g')
+			//rwb.draw_glyf(600, 400, 'o')
+			//rwb.draw_glyf(650, 400, 'o')
+			//rwb.draw_glyf(700, 400, 'd')
 			//rwb.draw_glyf(450, 400, 'C')
 			//rwb.draw_glyf(700, 400, 'D')
 

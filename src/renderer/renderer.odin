@@ -66,18 +66,18 @@ init_context :: proc() {
 
 	create_shader_program(
 		.Rect,
-		"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_vs.shader",
-		"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_fs.shader",
-		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_vs.shader",
-		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_fs.shader",
+		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_vs.shader",
+		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_fs.shader",
+		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_vs.shader",
+		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_fs.shader",
 	)
 
 	create_shader_program(
 		.Point,
-		"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_vs.shader",
-		"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_fs.shader",
-		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_vs.shader",
-		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_fs.shader",
+		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_vs.shader",
+		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_fs.shader",
+		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_vs.shader",
+		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_fs.shader",
 	)
 
 	use_shader_program(state.shaders[.Rect])
@@ -251,7 +251,7 @@ rwb_end :: proc() {
 
 		gl.BindVertexArray(VAO)
 
-		gl.DrawElements(gl.LINES, cast(i32)len(indices), gl.UNSIGNED_INT, rawptr(uintptr(0)))
+		gl.DrawElements(gl.LINE_LOOP, cast(i32)len(indices), gl.UNSIGNED_INT, rawptr(uintptr(0)))
 
 		gl.BindBuffer(gl.ARRAY_BUFFER, 0)
 		gl.BindVertexArray(0)
@@ -330,15 +330,15 @@ draw_line :: proc(p0, p1: Point, colour: Colour_RGBA = RED) {
 
 draw_text :: proc(pos: Point, text: string) {
 	for codepoint in text {
-		draw_glyf(pos, codepoint)
+		//draw_glyf(pos, codepoint)
 		//Do glyf spacing based on font info
 	}
 }
 //need to add sizing
-draw_glyf :: proc(pos: Point, glyf: rune) {
-	//Direct font rendering, can use the glyf info to render the text given in the Render_Command without faffing with making custom render commands
+//draw_glyf :: proc(pos: Point, glyf: rune) {
+//Direct font rendering, can use the glyf info to render the text given in the Render_Command without faffing with making custom render commands
 
-	/*
+/*
 	- Check glyf cache for full extrapolated point info.
 	- If there draw the lines.
 	- If not get the glyf info (from some sort of font struct)
@@ -348,48 +348,45 @@ draw_glyf :: proc(pos: Point, glyf: rune) {
 	*/
 
 
-}
-/*
+//}
+
 draw_glyf :: proc(
+	origin: Point,
 	points: []Point,
-	indices_end_points: []u32,
+	contour_end_points: []u32,
 	radius: f32,
 	colour: Colour_RGBA = RED,
 ) {
-	for i in 0 ..< len(indices_end_points) {
+	use_shader_program(state.shaders[.Point])
+	contour_start: u32 = 0
+
+	for end_index in contour_end_points {
 		rwb_begin(.Glyf)
 
-		for point in points {
+		indices := make([]u32, end_index - contour_start + 1, allocator = context.temp_allocator)
+		//SOME MEMORY LEAK HERE WITH THE INDICES ARRAY
+
+		for point, i in points[contour_start:end_index + 1] {
 			rwb_vertex_2f(
 				{
-					normalise_val(point.x, 0, state.window_width),
-					normalise_val(point.y, 0, state.window_height),
+					normalise_val(origin.x + point.x, 0, state.window_width),
+					normalise_val(origin.y + point.y, 0, state.window_height),
 				},
 			)
-		}
-
-		indices: [dynamic]u32
-
-		index: u32
-
-		if i > 0 {
-			index = indices_end_points[i - 1] + 1
-		}
-
-		for index <= indices_end_points[i] {
-			append(&indices, index)
-			index += 1
+			indices[i] = cast(u32)i
 		}
 
 		rwb_indices(indices[:])
 
-		use_shader_program(state.shaders[.Point])
+		delete(indices, allocator = context.temp_allocator)
+
 		shader_set_uniform4(state.shaders[.Point], "colour", normalise_colour(colour))
 		shader_set_uniform1(state.shaders[.Point], "point_size", radius)
 
 		rwb_end()
+		contour_start = end_index + 1
 	}
-}*/
+}
 
 draw_rect :: proc(
 	bounds: Rectangle,
