@@ -66,18 +66,18 @@ init_context :: proc() {
 
 	create_shader_program(
 		.Rect,
-		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_vs.shader",
-		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_fs.shader",
-		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_vs.shader",
-		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_fs.shader",
+		"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_vs.shader",
+		"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_fs.shader",
+		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_vs.shader",
+		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_fs.shader",
 	)
 
 	create_shader_program(
 		.Point,
-		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_vs.shader",
-		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_fs.shader",
-		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_vs.shader",
-		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_fs.shader",
+		"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_vs.shader",
+		"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_fs.shader",
+		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_vs.shader",
+		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_fs.shader",
 	)
 
 	use_shader_program(state.shaders[.Rect])
@@ -364,7 +364,7 @@ draw_glyf :: proc(
 		rwb_begin(.Glyf)
 
 		indices := make([]u32, end_index - contour_start + 1, allocator = context.temp_allocator)
-		//SOME MEMORY LEAK HERE WITH THE INDICES ARRAY
+		//SOME MEMORY LEAK HERE WITH THE INDICES ARRAY, possibly some OpenGL thing.
 
 		for point, i in points[contour_start:end_index + 1] {
 			rwb_vertex_2f(
@@ -376,7 +376,7 @@ draw_glyf :: proc(
 			indices[i] = cast(u32)i
 		}
 
-		rwb_indices(indices[:])
+		rwb_indices(indices)
 
 		delete(indices, allocator = context.temp_allocator)
 

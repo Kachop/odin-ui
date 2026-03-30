@@ -129,8 +129,8 @@ main :: proc() {
 	//Boilerplater setup
 
 	rwb.load_font(
-		"/home/robert/Development/odin/odin-ui/src/fonts/Momo_Signature/MomoSignature-Regular.ttf",
-		//"/home/robert/Development/odin/odin-ui/src/fonts/paul-font/paul_font.ttf",//"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Momo_Signature/MomoSignature-Regular.ttf", //"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Paul/Paul.ttf",
+		"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Momo_Signature/MomoSignature-Regular.ttf", //"/home/robert/Development/odin/odin-ui/src/fonts/Momo_Signature/MomoSignature-Regular.ttf",//"/home/robert/Development/odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
+		//"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Paul/Paul.ttf",
 		//"/mnt/Guido/Development/Odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
 	)
 
