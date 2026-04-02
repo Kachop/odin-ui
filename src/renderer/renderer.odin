@@ -266,6 +266,10 @@ rwb_vertex_2f :: proc(vertex: Point) {
 	append(&state.vertex_list, vertex)
 }
 
+rwb_index :: proc(index: u32) {
+	append(&state.indices_list, index)
+}
+
 rwb_indices :: proc(indices: []u32) {
 	for index in indices {
 		append(&state.indices_list, index)
@@ -363,9 +367,6 @@ draw_glyf :: proc(
 	for end_index in contour_end_points {
 		rwb_begin(.Glyf)
 
-		indices := make([]u32, end_index - contour_start + 1, allocator = context.temp_allocator)
-		//SOME MEMORY LEAK HERE WITH THE INDICES ARRAY, possibly some OpenGL thing.
-
 		for point, i in points[contour_start:end_index + 1] {
 			rwb_vertex_2f(
 				{
@@ -373,12 +374,8 @@ draw_glyf :: proc(
 					normalise_val(origin.y + point.y, 0, state.window_height),
 				},
 			)
-			indices[i] = cast(u32)i
+			rwb_index(cast(u32)i)
 		}
-
-		rwb_indices(indices)
-
-		delete(indices, allocator = context.temp_allocator)
 
 		shader_set_uniform4(state.shaders[.Point], "colour", normalise_colour(colour))
 		shader_set_uniform1(state.shaders[.Point], "point_size", radius)

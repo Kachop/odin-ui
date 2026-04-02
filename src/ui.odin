@@ -10,7 +10,6 @@ import vmem "core:mem/virtual"
 import "core:slice"
 import "core:sync"
 import "core:thread"
-import fonts "fonts"
 import platform "platform"
 import renderer "renderer"
 
@@ -48,67 +47,6 @@ Basic controlls to add:
 */
 
 Rectangle :: renderer.Rectangle
-
-load_font :: proc(filepath: string) {
-	state.font = fonts.ttf_load_font(filepath)
-}
-
-draw_glyf :: proc(x, y: f32, char: rune) {
-	glyf_data: ^fonts.Glyf_Data
-	if char in state.font.glyf_info {
-		glyf_data = &state.font.glyf_info[char]
-	} else {
-		//Assign missing glyf
-		glyf_data = &state.font.glyf_info[rune(65535)]
-	}
-	if glyf_data.cached {
-		append_dynamic_slice(
-			&state.non_tree_render_commands,
-			render_command(
-				.Text,
-				{x, y, 0, 0},
-				ui_ctrl_style(radius = {5, 5, 5, 5}),
-				glyf_data.bezier_curve_points,
-				glyf_data.bezier_contour_end_pts,
-			),
-		)
-	} else {
-		fonts.calculate_curve_points(glyf_data)
-		glyf_data.cached = true
-		draw_glyf(x, y, char)
-	}
-}
-
-draw_point :: proc(x, y, radius: f32) {
-	append_dynamic_slice(
-		&state.non_tree_render_commands,
-		render_command(
-			.Text,
-			{x, y, 0, 0},
-			ui_ctrl_style(radius = {radius, radius, radius, radius}),
-		),
-	)
-}
-
-draw_line :: proc(p0, p1: renderer.Point, radius: f32) {
-	append_dynamic_slice(
-		&state.non_tree_render_commands,
-		render_command(
-			.Text,
-			{p0.x, p0.y, p1.x, p1.y},
-			ui_ctrl_style(radius = {radius, radius, radius, radius}),
-		),
-	)
-	//fmt.println("Adding line:", "p0:", p0, ", p1:", p1)
-	//fmt.println("Lines to draw:", dynamic_slice_len(state.non_tree_render_commands))
-}
-
-freestyle_rect :: proc(x, y, width, height: f32) {
-	append_dynamic_slice_back(
-		&state.last_render_commands,
-		render_command(.Text, {x, y, width, height}, ui_ctrl_style()),
-	)
-}
 
 set_window_size_limits :: platform.set_window_size_limits
 process_input :: platform.process_input
@@ -493,7 +431,7 @@ render_command :: proc(
 @(private)
 UI_State :: struct {
 	window_state:             ^platform.Window_State,
-	font:                     fonts.Font,
+	font:                     Font,
 	bg_colour:                renderer.Colour_RGBA,
 	rendering:                bool,
 	ui_mutex:                 sync.Mutex,
@@ -1094,10 +1032,6 @@ ui_get_ctrl_bounds :: proc(ctrls: Dynamic_Slice(^UI_Ctrl)) {
 	}
 	//REDO position calculations
 }
-
-measure_text_width :: proc(text: string) -> f32 {return {}}
-
-measure_text_height :: proc(text: string) -> f32 {return {}}
 
 calc_ctrl_size :: proc(
 	ctrl: ^UI_Ctrl,

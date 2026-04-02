@@ -129,8 +129,7 @@ main :: proc() {
 	//Boilerplater setup
 
 	rwb.load_font(
-		"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Momo_Signature/MomoSignature-Regular.ttf", //"/home/robert/Development/odin/odin-ui/src/fonts/Momo_Signature/MomoSignature-Regular.ttf",//"/home/robert/Development/odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
-		//"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Paul/Paul.ttf",
+		"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Paul/Paul.ttf",//"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Momo_Signature/MomoSignature-Regular.ttf", //"/home/robert/Development/odin/odin-ui/src/fonts/Momo_Signature/MomoSignature-Regular.ttf",//"/home/robert/Development/odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
 		//"/mnt/Guido/Development/Odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
 	)
 
@@ -212,7 +211,8 @@ main :: proc() {
 
 			//rwb.draw_glyf(300, 300, rune(5834))
 
-			rwb.draw_glyf(400, 300, 'B')
+			rwb.draw_text(400, 300, "Rebecca Habgood")
+			//rwb.draw_glyf(400, 300, 'B')
 			//rwb.draw_glyf(450, 300, 'e')
 			//rwb.draw_glyf(500, 300, 'c')
 			//rwb.draw_glyf(550, 300, 'k')

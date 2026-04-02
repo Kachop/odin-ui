@@ -23,15 +23,25 @@ Font :: struct {
 }
 
 TTF_Reader :: struct {
-	cursor:    u32, //Current reading location.
-	buf:       []u8, //TTF file data.
-	len:       u32, //Total file length (for bounds checking).
-	tables:    map[string]u32, //All of the tables from the TTF file.
-	cmap:      map[rune]u32, //All of the character mappings.
-	max_glyfs: u16, //Max number of glyfs.
-	arena:     vmem.Arena, //Arena for all the reader opperations.
-	allocator: mem.Allocator, //Everything can be disposed of once the file is read.
+	cursor:              u32, //Current reading location.
+	buf:                 []u8, //TTF file data.
+	len:                 u32, //Total file length (for bounds checking).
+	tables:              map[string]u32, //All of the tables from the TTF file.
+	cmap:                map[rune]u32, //All of the character mappings.
+	max_glyfs:           u16, //Max number of glyfs.
+	number_of_H_metrics: u16, //Needed for calculating character spacing.
+	advance_widths:      []u16,
+	lsbs:                []i16,
+	arena:               vmem.Arena, //Arena for all the reader opperations.
+	allocator:           mem.Allocator, //Everything can be disposed of once the file is read.
 }
+
+TTF_Reader_Error :: enum {
+	None,
+	File_Not_Exist,
+	File_Read_Error,
+	CMAP_Format_Not_Supported,
+} //Errors associated with reading the TTF file.
 
 Glfy_Flags :: enum u8 {
 	ON_CURVE_POINT                       = 0b00000001,
@@ -73,6 +83,9 @@ Coord_Type :: enum {
 Glyf_Data :: struct {
 	num_of_contours:            i16,
 	x_min, y_min, x_max, y_max: i16,
+	lsb, rsb:                   i16,
+	advance_width:              u16,
+	spacing:                    f32,
 	end_pts_of_contours:        []u16,
 	instruction_length:         u16,
 	instructions:               []u8,
@@ -126,7 +139,7 @@ destroy_font :: proc(font: ^Font) {
 	vmem.arena_free_all(&font_arena)
 }
 
-load_ttf_file :: proc(reader: ^TTF_Reader, filename: string) {
+load_ttf_file :: proc(reader: ^TTF_Reader, filename: string) -> TTF_Reader_Error {
 	if os.exists(filename) {
 		file_error: os.Error
 		reader.buf, file_error = os.read_entire_file_from_path(
@@ -139,10 +152,13 @@ load_ttf_file :: proc(reader: ^TTF_Reader, filename: string) {
 			reader.len = cast(u32)len(reader.buf)
 		} else {
 			fmt.println("Error loading font:", file_error)
+			return .File_Read_Error
 		}
 	} else {
 		fmt.println("File doesn't exist'")
+		return .File_Not_Exist
 	}
+	return .None
 }
 
 ttf_read_u8 :: proc(reader: ^TTF_Reader) -> u8 {
@@ -270,7 +286,53 @@ ttf_is_flag_set_u16 :: proc(flag: u16, bit: u16) -> bool {
 	return flag & bit != 0
 }
 
-ttf_read_cmap :: proc(reader: ^TTF_Reader) {
+ttf_read_hhea :: proc(reader: ^TTF_Reader) {
+	ttf_move_to_location(reader, reader.tables["hhea"])
+	major_version := ttf_read_u16(reader)
+	minor_version := ttf_read_u16(reader)
+	ascender := ttf_read_i16(reader)
+	descender := ttf_read_i16(reader)
+	line_gap := ttf_read_i16(reader)
+	advance_width_max := ttf_read_u16(reader)
+	min_left_side_bearing := ttf_read_i16(reader)
+	min_right_side_bearing := ttf_read_i16(reader)
+	x_max_extent := ttf_read_i16(reader)
+	caret_slope_rise := ttf_read_i16(reader)
+	caret_slope_run := ttf_read_i16(reader)
+	caret_offset := ttf_read_i16(reader)
+	ttf_skip_bytes(reader, 8) //Skip reserved
+	metric_data_format := ttf_read_i16(reader)
+	reader.number_of_H_metrics = ttf_read_u16(reader)
+}
+
+ttf_read_htmx :: proc(reader: ^TTF_Reader) {
+	ttf_move_to_location(reader, reader.tables["hmtx"])
+
+	advance_widths := make([]u16, reader.max_glyfs, allocator = reader.allocator)
+	lsbs := make([]i16, reader.max_glyfs, allocator = reader.allocator)
+
+	last_advance_width: u16
+
+
+	for i in 0 ..< reader.number_of_H_metrics {
+		advance_widths[i] = ttf_read_u16(reader)
+		lsbs[i] = ttf_read_i16(reader)
+		last_advance_width = advance_widths[i]
+	}
+
+	if reader.max_glyfs > reader.number_of_H_metrics {
+		for i in reader.number_of_H_metrics ..< reader.max_glyfs {
+			advance_widths[i] = last_advance_width
+			lsbs[i] = ttf_read_i16(reader)
+		}
+	}
+
+	reader.advance_widths = advance_widths
+	reader.lsbs = lsbs
+
+}
+
+ttf_read_cmap :: proc(reader: ^TTF_Reader) -> TTF_Reader_Error {
 	ttf_move_to_location(reader, reader.tables["cmap"])
 
 	version := ttf_read_u16(reader)
@@ -303,8 +365,10 @@ ttf_read_cmap :: proc(reader: ^TTF_Reader) {
 	switch format {
 	case 0:
 		fmt.println("ERROR: FORMAT 0 CMAP NOT IMPLEMENTED")
+		return .CMAP_Format_Not_Supported
 	case 2:
 		fmt.println("ERROR: FORMAT 2 CMAP NOT IMPLEMENTED")
+		return .CMAP_Format_Not_Supported
 	case 4:
 		length := ttf_read_u16(reader)
 		language := ttf_read_u16(reader)
@@ -354,19 +418,33 @@ ttf_read_cmap :: proc(reader: ^TTF_Reader) {
 		}
 	case 6:
 		fmt.println("ERROR: FORMAT 6 CMAP NOT IMPLEMENTED")
+		return .CMAP_Format_Not_Supported
 	case 8:
 		fmt.println("ERROR: FORMAT 8 CMAP NOT IMPLEMENTED")
+		return .CMAP_Format_Not_Supported
 	case 10:
 		fmt.println("ERROR: FORMAT 10 CMAP NOT IMPLEMENTED")
+		return .CMAP_Format_Not_Supported
 	case 12:
-		fmt.println("ERROR: FORMAT 12 CMAP NOT IMPLEMENTED")
+		reserved := ttf_read_u16(reader)
+		length := ttf_read_u32(reader)
+		language := ttf_read_u32(reader)
+		num_groupings := ttf_read_u32(reader)
+		for i in 0 ..< num_groupings {
+			start_char_code := ttf_read_u32(reader)
+			end_char_code := ttf_read_u32(reader)
+			start_glyf_ID := ttf_read_u32(reader)
+
+			for c, i in start_char_code ..= end_char_code {
+				reader.cmap[rune(c)] = start_char_code + cast(u32)i
+			}
+		}
 	case 14:
 		fmt.println("ERROR: FORMAT 14 CMAP NOT IMPLEMENTED")
+		return .CMAP_Format_Not_Supported
 	}
-
+	return .None
 }
-
-//runes: [dynamic]rune
 
 ttf_get_em_coords :: proc(
 	reader: ^TTF_Reader,
@@ -437,6 +515,7 @@ ttf_get_em_coords :: proc(
 
 ttf_read_glyf_data :: proc(
 	reader: ^TTF_Reader,
+	glyf_index: u32,
 	units_per_em: u16,
 	allocator: mem.Allocator,
 ) -> Glyf_Data {
@@ -447,24 +526,15 @@ ttf_read_glyf_data :: proc(
 	y_max := ttf_read_i16(reader)
 
 	if num_of_contours == 0 {
+		assert(reader.lsbs[glyf_index] == 0)
 		//Non-visual character, can skip the rest, no data exists
 		return Glyf_Data {
-			num_of_contours,
-			x_min,
-			y_min,
-			x_max,
-			y_max,
-			{},
-			0,
-			{},
-			{},
-			{},
-			{},
-			false,
-			{},
-			{},
-			0,
-			allocator,
+			num_of_contours = num_of_contours,
+			x_min = x_min,
+			y_min = y_min,
+			x_max = x_max,
+			y_max = y_max,
+			allocator = allocator,
 		}
 	} else if num_of_contours < 0 {
 		flags := ttf_read_u16(reader)
@@ -567,12 +637,21 @@ ttf_read_glyf_data :: proc(
 	ttf_get_em_coords(reader, x_coords, num_of_coords, flags, .X)
 	ttf_get_em_coords(reader, y_coords, num_of_coords, flags, .Y)
 
+	rsb :=
+		cast(i16)cast(i32)reader.advance_widths[glyf_index] -
+		reader.lsbs[glyf_index] -
+		(x_max - x_min)
+
 	return Glyf_Data {
 		num_of_contours,
 		x_min,
 		y_min,
 		x_max,
 		y_max,
+		reader.lsbs[glyf_index],
+		rsb,
+		reader.advance_widths[glyf_index],
+		0,
 		end_pts_of_contours,
 		instructions_len,
 		instructions,
@@ -587,14 +666,18 @@ ttf_read_glyf_data :: proc(
 	}
 }
 
-ttf_load_font :: proc(filepath: string) -> Font {
+ttf_load_font :: proc(filepath: string) -> (Font, TTF_Reader_Error) {
 	font: Font
 	init_font(&font)
 
 	ttf_reader: TTF_Reader
 
 	init_ttf_reader(&ttf_reader)
-	load_ttf_file(&ttf_reader, filepath)
+	ttf_error := load_ttf_file(&ttf_reader, filepath)
+
+	if ttf_error != .None {
+		return Font{}, ttf_error
+	}
 
 	scalar_type := ttf_read_u32(&ttf_reader)
 	num_tables := ttf_read_u16(&ttf_reader)
@@ -623,7 +706,11 @@ ttf_load_font :: proc(filepath: string) -> Font {
 	lowest_rec_PPEM := ttf_read_u16(&ttf_reader)
 	font_direction_hint := ttf_read_i16(&ttf_reader)
 	loc_format := ttf_read_i16(&ttf_reader) //0 for short, 1 for long
-	ttf_read_cmap(&ttf_reader)
+	ttf_error = ttf_read_cmap(&ttf_reader)
+
+	if ttf_error != .None {
+		return Font{}, ttf_error
+	}
 
 	ttf_move_to_location(&ttf_reader, ttf_reader.tables["loca"])
 
@@ -641,12 +728,15 @@ ttf_load_font :: proc(filepath: string) -> Font {
 		ttf_read_u32_arr(&ttf_reader, offsets, cast(u32)ttf_reader.max_glyfs + 1)
 	}
 
+	ttf_read_hhea(&ttf_reader)
+	ttf_read_htmx(&ttf_reader)
+
 	glyf_info := make(map[rune]Glyf_Data, allocator = font_alloc)
 
 	for key, val in ttf_reader.cmap {
 		ttf_move_to_location(&ttf_reader, ttf_reader.tables["glyf"])
 		ttf_skip_bytes(&ttf_reader, cast(u32)offsets[val])
-		glyf_info[key] = ttf_read_glyf_data(&ttf_reader, units_per_em, font_alloc)
+		glyf_info[key] = ttf_read_glyf_data(&ttf_reader, val, units_per_em, font_alloc)
 	}
 
 	font.base_size = cast(int)lowest_rec_PPEM
@@ -655,7 +745,7 @@ ttf_load_font :: proc(filepath: string) -> Font {
 
 	destroy_ttf_reader(&ttf_reader)
 
-	return font
+	return font, .None
 }
 
 linear_interpolation :: proc(start, end: renderer.Point, t: f32) -> renderer.Point {
@@ -692,7 +782,14 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 	off_curve_counter: u8
 
 	//pixel coord = em_coord * ppem / upem
-	scale_multiplyer: f32 = (6 * 10) / cast(f32)glyf_data.units_per_em
+	scale_multiplyer: f32 = (50) / cast(f32)glyf_data.units_per_em
+
+	glyf_data.spacing =
+		(cast(f32)glyf_data.lsb +
+			cast(f32)glyf_data.x_max -
+			cast(f32)glyf_data.x_min +
+			cast(f32)glyf_data.rsb) *
+		scale_multiplyer
 
 	contour_start := 0
 
