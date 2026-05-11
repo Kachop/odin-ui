@@ -251,7 +251,7 @@ rwb_end :: proc() {
 
 		gl.BindVertexArray(VAO)
 
-		gl.DrawElements(gl.LINE_LOOP, cast(i32)len(indices), gl.UNSIGNED_INT, rawptr(uintptr(0)))
+		gl.DrawElements(gl.TRIANGLES, cast(i32)len(indices), gl.UNSIGNED_INT, rawptr(uintptr(0)))
 
 		gl.BindBuffer(gl.ARRAY_BUFFER, 0)
 		gl.BindVertexArray(0)
@@ -364,6 +364,8 @@ draw_glyf :: proc(
 	use_shader_program(state.shaders[.Point])
 	contour_start: u32 = 0
 
+	triangulation := triangulate(points)
+
 	for end_index in contour_end_points {
 		rwb_begin(.Glyf)
 
@@ -374,7 +376,7 @@ draw_glyf :: proc(
 					normalise_val(origin.y + point.y, 0, state.window_height),
 				},
 			)
-			rwb_index(cast(u32)i)
+			rwb_index(cast(u32)triangulation.triangles[i])
 		}
 
 		shader_set_uniform4(state.shaders[.Point], "colour", normalise_colour(colour))
