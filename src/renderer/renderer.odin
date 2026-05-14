@@ -366,6 +366,8 @@ draw_glyf :: proc(
 
 	triangulation := triangulate(points)
 
+	triangulation_point: u32
+
 	for end_index in contour_end_points {
 		rwb_begin(.Glyf)
 
@@ -376,7 +378,8 @@ draw_glyf :: proc(
 					normalise_val(origin.y + point.y, 0, state.window_height),
 				},
 			)
-			rwb_index(cast(u32)triangulation.triangles[i])
+			rwb_index(triangulation.triangles[triangulation_point])
+			triangulation_point += 1
 		}
 
 		shader_set_uniform4(state.shaders[.Point], "colour", normalise_colour(colour))
