@@ -80,6 +80,7 @@ Coord_Type :: enum {
 	Y,
 }
 
+//TODO:Calculate Bezier curve points on font load, not first draw
 Glyf_Data :: struct {
 	num_of_contours:            i16,
 	x_min, y_min, x_max, y_max: i16,
@@ -95,6 +96,7 @@ Glyf_Data :: struct {
 	bezier_curve_points:        []renderer.Point, //calculated the first time the glyf is drawn
 	bezier_contour_end_pts:     []u32,
 	units_per_em:               u16,
+	indices:                    []u32,
 	allocator:                  mem.Allocator,
 }
 
@@ -662,6 +664,7 @@ ttf_read_glyf_data :: proc(
 		{},
 		{},
 		units_per_em,
+		{},
 		allocator,
 	}
 }
@@ -737,6 +740,8 @@ ttf_load_font :: proc(filepath: string) -> (Font, TTF_Reader_Error) {
 		ttf_move_to_location(&ttf_reader, ttf_reader.tables["glyf"])
 		ttf_skip_bytes(&ttf_reader, cast(u32)offsets[val])
 		glyf_info[key] = ttf_read_glyf_data(&ttf_reader, val, units_per_em, font_alloc)
+		calculate_curve_points(&glyf_info[key])
+		triangulate(&glyf_info[key])
 	}
 
 	font.base_size = cast(int)lowest_rec_PPEM

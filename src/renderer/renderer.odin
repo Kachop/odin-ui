@@ -66,18 +66,18 @@ init_context :: proc() {
 
 	create_shader_program(
 		.Rect,
-		"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_vs.shader",
-		"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_fs.shader",
-		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_vs.shader",
-		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_fs.shader",
+		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_vs.shader",
+		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_fs.shader",
+		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_vs.shader",
+		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_fs.shader",
 	)
 
 	create_shader_program(
 		.Point,
-		"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_vs.shader",
-		"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_fs.shader",
-		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_vs.shader",
-		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_fs.shader",
+		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_vs.shader",
+		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_fs.shader",
+		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_vs.shader",
+		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_fs.shader",
 	)
 
 	use_shader_program(state.shaders[.Rect])
@@ -251,7 +251,7 @@ rwb_end :: proc() {
 
 		gl.BindVertexArray(VAO)
 
-		gl.DrawElements(gl.TRIANGLES, cast(i32)len(indices), gl.UNSIGNED_INT, rawptr(uintptr(0)))
+		gl.DrawElements(gl.LINE_LOOP, cast(i32)len(indices), gl.UNSIGNED_INT, rawptr(uintptr(0)))
 
 		gl.BindBuffer(gl.ARRAY_BUFFER, 0)
 		gl.BindVertexArray(0)
@@ -357,37 +357,36 @@ draw_text :: proc(pos: Point, text: string) {
 draw_glyf :: proc(
 	origin: Point,
 	points: []Point,
-	contour_end_points: []u32,
+	indices: []u32,
+	//contour_end_points: []u32,
 	radius: f32,
 	colour: Colour_RGBA = RED,
 ) {
 	use_shader_program(state.shaders[.Point])
 	contour_start: u32 = 0
 
-	triangulation := triangulate(points)
+	//for end_index in contour_end_points {
+	rwb_begin(.Glyf)
 
-	triangulation_point: u32
-
-	for end_index in contour_end_points {
-		rwb_begin(.Glyf)
-
-		for point, i in points[contour_start:end_index + 1] {
-			rwb_vertex_2f(
-				{
-					normalise_val(origin.x + point.x, 0, state.window_width),
-					normalise_val(origin.y + point.y, 0, state.window_height),
-				},
-			)
-			rwb_index(triangulation.triangles[triangulation_point])
-			triangulation_point += 1
-		}
-
-		shader_set_uniform4(state.shaders[.Point], "colour", normalise_colour(colour))
-		shader_set_uniform1(state.shaders[.Point], "point_size", radius)
-
-		rwb_end()
-		contour_start = end_index + 1
+	for point, i in points {
+		rwb_vertex_2f(
+			{
+				normalise_val(origin.x + point.x, 0, state.window_width),
+				normalise_val(origin.y + point.y, 0, state.window_height),
+			},
+		)
 	}
+
+	for index in indices {
+		rwb_index(index)
+	}
+
+	shader_set_uniform4(state.shaders[.Point], "colour", normalise_colour(colour))
+	shader_set_uniform1(state.shaders[.Point], "point_size", radius)
+
+	rwb_end()
+	//contour_start = end_index + 1
+	//}
 }
 
 draw_rect :: proc(
