@@ -669,13 +669,17 @@ ttf_read_glyf_data :: proc(
 	}
 }
 
-ttf_load_font :: proc(filepath: string) -> (Font, TTF_Reader_Error) {
+ttf_load_font :: proc(filename: string) -> (Font, TTF_Reader_Error) {
 	font: Font
 	init_font(&font)
 
 	ttf_reader: TTF_Reader
 
 	init_ttf_reader(&ttf_reader)
+
+	cwd, err := os.getwd(context.temp_allocator)
+	filepath := fmt.tprint(cwd, "/src/fonts/", filename, sep = "")
+
 	ttf_error := load_ttf_file(&ttf_reader, filepath)
 
 	if ttf_error != .None {
@@ -736,12 +740,16 @@ ttf_load_font :: proc(filepath: string) -> (Font, TTF_Reader_Error) {
 
 	glyf_info := make(map[rune]Glyf_Data, allocator = font_alloc)
 
+	i := 1
+	fmt.println("Loading", len(ttf_reader.cmap), "glyfs")
 	for key, val in ttf_reader.cmap {
 		ttf_move_to_location(&ttf_reader, ttf_reader.tables["glyf"])
 		ttf_skip_bytes(&ttf_reader, cast(u32)offsets[val])
 		glyf_info[key] = ttf_read_glyf_data(&ttf_reader, val, units_per_em, font_alloc)
 		calculate_curve_points(&glyf_info[key])
 		triangulate(&glyf_info[key])
+		fmt.println(i, "/", len(ttf_reader.cmap))
+		i += 1
 	}
 
 	font.base_size = cast(int)lowest_rec_PPEM
@@ -774,13 +782,20 @@ calculate_bezier :: proc(p0, p1, p2: renderer.Point, resolution: int) -> []rende
 	return points[:]
 }
 
+is_linear :: proc(p0, p1, p2: renderer.Point) -> bool {
+	if (p1.y - p0.y) * (p2.x - p0.x) == (p2.y - p0.y) * (p1.x - p0.x) {
+		return true
+	}
+	return false
+}
+
 calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 	//For non-cached glyfs. Calculate the curve points so the line segments can be drawn. Add curve points to the glyf data.
 	num_of_contours := glyf_data.num_of_contours
 	contour_end_points := glyf_data.end_pts_of_contours
 
-	curve_points := make([dynamic]renderer.Point, allocator = context.temp_allocator)
-	curve_contour_end_points := make([dynamic]int, allocator = context.temp_allocator)
+	curve_points := make([dynamic]renderer.Point, allocator = glyf_data.allocator)
+	curve_contour_end_points := make([dynamic]u32, allocator = glyf_data.allocator)
 
 	current_contour: u8
 	on_curve_counter: u8
@@ -798,8 +813,8 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 
 	contour_start := 0
 
-	for end_index in glyf_data.end_pts_of_contours {
-		on_curve_offset: int //Offset to first on-curve point.
+	for end_index, contour_idx in glyf_data.end_pts_of_contours {
+		on_curve_offset: int
 		for i in contour_start ..< cast(int)end_index {
 			if ttf_is_flag_set(glyf_data.flags[i], cast(u8)Glfy_Flags.ON_CURVE_POINT) {
 				on_curve_offset = i - contour_start
@@ -912,10 +927,9 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 
 		contour_start = cast(int)end_index + 1
 
-		append(&curve_contour_end_points, len(curve_points) - 1)
+		append(&curve_contour_end_points, cast(u32)(len(curve_points) - 1))
 	}
 
-	current_contour = 0
 
 	bezier_curve_points := make([dynamic]renderer.Point, allocator = glyf_data.allocator)
 	bezier_curve_end_points := make(
@@ -924,18 +938,28 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 		allocator = glyf_data.allocator,
 	)
 
+	current_contour = 0
 	contour_start = 0
 
-	for end_index, i in curve_contour_end_points {
-		for index := contour_start + 2; index < end_index; index += 2 {
-			bezier_points := calculate_bezier(
-				curve_points[index - 2],
-				curve_points[index - 1],
-				curve_points[index],
-				30,
-			)
+	bezier_points: []renderer.Point
 
-			for point in bezier_points {
+	for end_index, i in curve_contour_end_points {
+		for index := contour_start + 2; index < int(end_index); index += 2 {
+			if !is_linear(curve_points[index - 2], curve_points[index - 1], curve_points[index]) {
+				bezier_points = calculate_bezier(
+					curve_points[index - 2],
+					curve_points[index - 1],
+					curve_points[index],
+					10,
+				)
+			} else {
+				//If the points form a straight line no interpolation is needed.
+				//Saves more points, and thus triangles being unncessesatily generated.
+				append(&bezier_curve_points, curve_points[index - 2])
+			}
+
+			//Add all of the points to the bezier curve points list. Miss out the last point so it doesn't get added twice.
+			for point in bezier_points[:len(bezier_points) - 2] {
 				append(&bezier_curve_points, point)
 			}
 		}
@@ -944,14 +968,16 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 			curve_points[end_index - 1],
 			curve_points[end_index],
 			curve_points[contour_start],
-			30,
+			10,
 		) {
 			append(&bezier_curve_points, point)
 		}
 
 		bezier_curve_end_points[i] = cast(u32)len(bezier_curve_points) - 1
-		contour_start = end_index + 1
+		contour_start = cast(int)end_index + 1
 	}
 	glyf_data.bezier_curve_points = bezier_curve_points[:]
 	glyf_data.bezier_contour_end_pts = bezier_curve_end_points
+	//glyf_data.bezier_curve_points = curve_points[:]
+	//glyf_data.bezier_contour_end_pts = curve_contour_end_points[:]
 }

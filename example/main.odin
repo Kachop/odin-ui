@@ -5,6 +5,7 @@ package main
 import rwb "../src/"
 import "core:fmt"
 import vmem "core:mem/virtual"
+import "core:os"
 import "core:sync"
 import "core:sys/info"
 import "core:time"
@@ -129,8 +130,8 @@ main :: proc() {
 	//Boilerplater setup
 
 	rwb.load_font(
-		"/home/robert/Development/odin/odin-ui/src/fonts/Momo_Signature/MomoSignature-Regular.ttf", //"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Paul/Paul.ttf",//"/mnt/Guido/Development/Odin/odin-ui/src/fonts/Momo_Signature/MomoSignature-Regular.ttf",//"/home/robert/Development/odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
-		//"/mnt/Guido/Development/Odin/odin-ui/src/fonts/paul-font/paul_font.ttf",
+		"Momo_Signature/MomoSignature-Regular.ttf",
+		//"/Paul/Paul.ttf",
 	)
 
 	err := rwb.create_window(800, 600, "Example")

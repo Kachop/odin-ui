@@ -3,6 +3,8 @@ package renderer
 import "../platform"
 import "base:runtime"
 import "core:fmt"
+import "core:os"
+import "core:strings"
 import "core:time/timezone"
 import gl "vendor:OpenGL"
 import "vendor:glfw"
@@ -64,20 +66,26 @@ init_context :: proc() {
 	gl.Enable(gl.PROGRAM_POINT_SIZE)
 	gl.LineWidth(2)
 
+	cwd, err := os.getwd(context.temp_allocator)
+
 	create_shader_program(
 		.Rect,
+		fmt.tprint(cwd, "/src/renderer/shaders/rec_vs.shader", sep = ""),
+		fmt.tprint(cwd, "/src/renderer/shaders/rec_fs.shader", sep = ""),
 		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_vs.shader",
 		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_fs.shader",
-		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_vs.shader",
-		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_fs.shader",
+		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_vs.shader",
+		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_fs.shader",
 	)
 
 	create_shader_program(
 		.Point,
+		fmt.tprint(cwd, "/src/renderer/shaders/point_vs.shader", sep = ""),
+		fmt.tprint(cwd, "/src/renderer/shaders/point_fs.shader", sep = ""),
 		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_vs.shader",
 		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_fs.shader",
-		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_vs.shader",
-		"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_fs.shader",
+		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_vs.shader",
+		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_fs.shader",
 	)
 
 	use_shader_program(state.shaders[.Rect])
@@ -251,7 +259,7 @@ rwb_end :: proc() {
 
 		gl.BindVertexArray(VAO)
 
-		gl.DrawElements(gl.LINE_LOOP, cast(i32)len(indices), gl.UNSIGNED_INT, rawptr(uintptr(0)))
+		gl.DrawElements(gl.TRIANGLES, cast(i32)len(indices), gl.UNSIGNED_INT, rawptr(uintptr(0)))
 
 		gl.BindBuffer(gl.ARRAY_BUFFER, 0)
 		gl.BindVertexArray(0)
@@ -366,6 +374,7 @@ draw_glyf :: proc(
 	contour_start: u32 = 0
 
 	//for end_index in contour_end_points {
+
 	rwb_begin(.Glyf)
 
 	for point, i in points {

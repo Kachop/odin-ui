@@ -14,6 +14,18 @@ idx :: u32
 
 Vec2 :: [2]f32
 
+Vertices :: [3]renderer.Point
+Indices :: [3]u32
+Adjacencies :: [3]u32
+
+Triangulation :: struct {
+	index:          [dynamic]u32,
+	vertices:       [dynamic]Vertices,
+	indices:        [dynamic]Indices,
+	adjacencies:    [dynamic]Adjacencies,
+	destroyed_list: [dynamic]u32,
+}
+/*
 Triangle :: struct {
 	child_first: ^Triangle,
 	child_last:  ^Triangle,
@@ -38,7 +50,7 @@ triangle :: proc(
 		indices = indicies,
 	}
 }
-
+*/
 normalise_point_0_1 :: proc(
 	point: renderer.Point,
 	min_x, max_x, min_y, max_y: f32,
@@ -78,13 +90,13 @@ get_unit_vec :: proc(vec: Vec2) -> Vec2 {
 midpoint :: proc(vec: Vec2) -> renderer.Point {
 	return {vec.x / 2, vec.y / 2}
 }
-
-calculate_triangle_center :: proc(triangle: ^Triangle) -> Vec2 {
+/*
+calculate_triangle_center :: proc(triangle: ^Triangle) -> renderer.Point {
 	x_component := (triangle.vertices[0].x + triangle.vertices[1].x + triangle.vertices[2].x) / 3
 	y_component := (triangle.vertices[0].y + triangle.vertices[1].y + triangle.vertices[2].y) / 3
-	return Vec2{x_component, y_component}
+	return renderer.Point{x_component, y_component}
 }
-
+*/
 scale_point_cloud :: proc(points: []renderer.Point) -> []renderer.Point {
 	//Scales the point cloud between (0, 0) and (1, 1)
 	//Preserves relative distances for later.
@@ -144,11 +156,11 @@ scale_point_cloud :: proc(points: []renderer.Point) -> []renderer.Point {
 	return scaled_points
 }
 
-point_in_triangle :: proc(point: renderer.Point, triangle: ^Triangle) -> bool {
+point_in_triangle :: proc(point: renderer.Point, vertices: Vertices) -> bool {
 	//Uses barycentric method to figure out if a point is within a triangle.
-	v0 := vec2_from_points(triangle.vertices[2], triangle.vertices[0]) //C-A
-	v1 := vec2_from_points(triangle.vertices[1], triangle.vertices[0]) //B-A
-	v2 := vec2_from_points(point, triangle.vertices[0])
+	v0 := vec2_from_points(vertices[2], vertices[0]) //C-A
+	v1 := vec2_from_points(vertices[1], vertices[0]) //B-A
+	v2 := vec2_from_points(point, vertices[0])
 
 	d_00 := dot(v0, v0)
 	d_01 := dot(v0, v1)
@@ -160,81 +172,82 @@ point_in_triangle :: proc(point: renderer.Point, triangle: ^Triangle) -> bool {
 	u := ((d_11 * d_20) - (d_01 * d_21)) / denom
 	v := ((d_00 * d_21) - (d_01 * d_20)) / denom
 
-	if u >= 0 && v >= 0 && u + v <= 1 {
+	if u >= 0 && u <= 1 && v >= 0 && v <= 1 && u + v < 1 {
 		return true
 	}
 	return false
-	/*
-	if triangle.adjacencies[0] == nil &&
-	   triangle.adjacencies[1] == nil &&
-	   triangle.adjacencies[2] == nil {
-		return true
-	}
-	return false
-	*/
 }
 
-find_parent_edge :: proc(new_triangle, adjacent_triangle: ^Triangle) -> u32 {
-	//Finds the parent edge which is closest to the new point being inserted
+find_matching_edge :: proc(t1, t2: u32, triangulation: ^Triangulation) -> u32 {
+	//Finds the matching edge between two triangles.
 	//Finds the first non point vertex that matches between the adjacent triangle and the new one.
 	//First matching point matches the matching edge
+	//Returns the matching edge from the perspective of t1
 	for i in 0 ..< 3 {
-		if adjacent_triangle.vertices[i] == new_triangle.vertices[2] {
-			fmt.println("Found parent edge!!!", i)
+		if triangulation.vertices[t1][i] == triangulation.vertices[t2][2] {
 			return u32(i)
 		}
 	}
 	return 0
 }
-
+/*
 find_closest_edge :: proc(triangle: ^Triangle, point: renderer.Point) -> u32 {
+	//fmt.println("Finding closest edge for triangle:", triangle, "\npoint:", point)
 	//point_vec := vec2_from_points(calculate_triangle_center(triangle), point)
 	//point_unit_vec := get_unit_vec(point_vec)
 
 	lowest_distance: f32 = 1000000 //0-1 how much the vector points towards the POI.
 	highest_alignment: f32 = 0
 	adjacent_side: u32
+	/*
+	for i in 0 ..< 3 {
+		if triangle.adjacencies[i] != nil {
+			triangle_to_check := triangle.adjacencies[i]
 
+			triangle_center := calculate_triangle_center(triangle_to_check)
+			dist := distance(triangle_center, point)
+			if dist < lowest_distance {
+				lowest_distance = dist
+				adjacent_side = u32(i)
+			}
+		}
+	}
+*/
 	for i in 0 ..< 3 {
 		//Check each vertex
 		vertex := triangle.vertices[i]
 		next_vertex := triangle.vertices[i + 1 if (i + 1 < 3) else i + 1 - 3]
 
-		vec_to_point := vec2_from_points(vertex, point)
+		edge_vec := vec2_from_points(vertex, next_vertex)
 
-		vec_egde := vec2_from_points(vertex, next_vertex)
-
-		edge_dot := dot(get_unit_vec(vec_to_point), get_unit_vec(vec_egde))
-
-		fmt.println("Edge dot:", edge_dot)
-
-		face_vec := vec2_from_points(
-			triangle.vertices[i],
-			triangle.vertices[i + 1 if (i + 1 < 3) else i + 1 - 3],
-		)
-
-		face_normal_vec := normal(vec_egde)
+		face_normal_vec := normal(edge_vec)
 
 		face_unit_vec := get_unit_vec(face_normal_vec)
+		//fmt.println("Face unit vec:", face_unit_vec)
 
-		point_vec := vec2_from_points(midpoint(vec_egde), point)
+		midpoint := (vertex + next_vertex) / 2
+
+		//NOTE: Point unit vec values seem messed up. X and Y values look wrong sign sometimes.
+		point_vec := vec2_from_points(midpoint, point)
 		point_unit_vec := get_unit_vec(point_vec)
+		//fmt.println("Point unit vec:", point_unit_vec)
 
 		face_alignment := dot(point_unit_vec, face_unit_vec)
-		fmt.println("alignment:", face_alignment)
+		//fmt.println("alignment:", face_alignment)
 
-		t := math.clamp(edge_dot / dot(vec_egde, vec_egde), 0, 1)
-		Q := vertex + ((next_vertex - vertex) * t)
+		edge_dot := dot(edge_vec, vec2_from_points(vertex, point))
+
+		t := math.clamp(edge_dot / dot(edge_vec, edge_vec), 0, 1)
+		//fmt.println("t:", t)
+		Q := vertex + (edge_vec * t)
 		d := distance(point, Q)
-		fmt.println("i:", i, "d:", d)
-		if abs(d - lowest_distance) < 0.1 {
-			if face_alignment > highest_alignment {
-				lowest_distance = d
-				highest_alignment = face_alignment
-				adjacent_side = u32(i)
-			}
+		//fmt.println("i:", i, "d:", d)
+		if d < lowest_distance {
+			lowest_distance = d
+			adjacent_side = u32(i)
 		}
 	}
+
 	/*
 	for i in 0 ..< 3 {	
 
@@ -245,104 +258,189 @@ find_closest_edge :: proc(triangle: ^Triangle, point: renderer.Point) -> u32 {
 	}
 	*/
 
-	fmt.println("Selected:", adjacent_side)
+	//fmt.println("Selected:", adjacent_side)
 	return adjacent_side
 }
-
-find_containing_triangle :: proc(
-	starting_triangle: ^Triangle,
-	point: renderer.Point,
-) -> ^Triangle {
+*/
+find_containing_triangle :: proc(point: renderer.Point, triangulation: Triangulation) -> u32 {
 	//Traverse from the starting triangle through the triangles to find the one which contains the point
 
-	fmt.println("Finding containing triangle for:", point)
-	current_triangle := starting_triangle
+	//NOTE:Maybe just loop over all triangles, slightly slower but saves faf with current algorythm.
 
-	fmt.println(starting_triangle)
+	//fmt.println("Finding containing triangle for:", point)
 
-	for {
-		//Search for triangle
-		fmt.println("Triangle:", current_triangle)
-		fmt.println("Point:", point)
-		if point_in_triangle(point, current_triangle) {
-			fmt.println("Containing triangle found!!!!!!!!!!!!!!!!")
-			return current_triangle
+	index_destroyed: bool
+	for index, i in triangulation.index {
+		for destroyed_index in triangulation.destroyed_list {
+			if index == destroyed_index {
+				index_destroyed = true
+				break
+			}
 		}
 
-		adjacent_side := find_closest_edge(current_triangle, point)
-		new_triangle := current_triangle.adjacencies[adjacent_side]
-		current_triangle = new_triangle
-
+		if !index_destroyed {
+			if point_in_triangle(point, triangulation.vertices[i]) {
+				//fmt.println("Containing triangule found!")
+				return index
+			}
+		}
+		index_destroyed = false
 	}
-
+	//fmt.println("Could not find containing triangle")
 	return {}
 }
 
-make_new_triangles :: proc(parent: ^Triangle, point: renderer.Point, index: u32) {
+make_new_triangles :: proc(
+	parent: u32,
+	point: renderer.Point,
+	triangle_index: u32,
+	triangulation: ^Triangulation,
+) {
 	//Make three new triangles using the parent triangle and the point.
 	//Take care of adjacencies and deletion
 	for i in 0 ..< 3 {
-		new_triangle := new(Triangle, allocator = context.temp_allocator)
+		index := u32(len(triangulation.index))
 
-		new_triangle.vertices = {
+		new_vertices := Vertices {
 			point,
-			parent.vertices[i],
-			parent.vertices[i + 1 if (i + 1 < 3) else i + 1 - 3],
+			triangulation.vertices[parent][i],
+			triangulation.vertices[parent][i + 1 if (i + 1 < 3) else i + 1 - 3],
 		}
 
-		new_triangle.indices = {
-			index,
-			parent.indices[i],
-			parent.indices[i + 1 if (i + 1 < 3) else i + 1 - 3],
+		new_indices := Indices {
+			triangle_index,
+			triangulation.indices[parent][i],
+			triangulation.indices[parent][i + 1 if (i + 1 < 3) else i + 1 - 3],
 		}
 
-		if parent.child_first == nil {
-			parent.child_first = new_triangle
-			parent.child_last = new_triangle
-		} else {
-			parent.child_last.adjacencies[2] = new_triangle
-			new_triangle.adjacencies[0] = parent.child_last
-			parent.child_last = new_triangle
+		append(&triangulation.index, index)
+		append(&triangulation.vertices, new_vertices)
+		append(&triangulation.indices, new_indices)
+
+		new_adjacencies := Adjacencies{}
+		append(&triangulation.adjacencies, new_adjacencies)
+
+		if i >= 1 {
+			triangulation.adjacencies[len(triangulation.adjacencies) - 2][2] = index
+			triangulation.adjacencies[len(triangulation.adjacencies) - 1][0] =
+				triangulation.index[len(triangulation.index) - 2]
 		}
 
 		if i == 2 {
-			parent.child_first.adjacencies[0] = parent.child_last
-			parent.child_last.adjacencies[2] = parent.child_first
+			triangulation.adjacencies[len(triangulation.adjacencies) - 3][0] = index
+			triangulation.adjacencies[len(triangulation.adjacencies) - 1][2] =
+				triangulation.index[len(triangulation.index) - 3]
 		}
 
-		new_triangle.adjacencies[1] = parent.adjacencies[i] //1 adjacent triangle is inherited from the parent. 2 are then from the connections of the other two inner triangles.
-		if parent.adjacencies[i] != nil {
-			parent_adjacency := find_parent_edge(new_triangle, parent.adjacencies[i])
-			parent.adjacencies[i].adjacencies[parent_adjacency] = new_triangle //Set adjacency of parent adjacencies so that parent triangle can be deleted without leaving nil pointers.
+		triangulation.adjacencies[len(triangulation.adjacencies) - 1] =
+			triangulation.adjacencies[parent][1] //1 adjacent triangle is inherited from the parent. 2 are then from the connections of the other two inner triangles.
+
+		if triangulation.adjacencies[parent][i] != 0xFFFFFFFF {
+			parent_adjacency := find_matching_edge(
+				index,
+				triangulation.adjacencies[parent][i],
+				triangulation,
+			)
+			triangulation.adjacencies[triangulation.adjacencies[parent][i]][parent_adjacency] =
+				index
 		}
 	}
 }
 
-swap_edge :: proc(t1, t2: ^Triangle) {
+is_convex :: proc(t1, t2: u32, triangulation: Triangulation) -> bool {
+	t1_free_point: u32
+	t2_free_point: u32
+
+	match: bool
+	t2_match_total: u32
+
+	for t1_vertex, i in triangulation.vertices[t1] {
+		for t2_vertex, j in triangulation.vertices[t2] {
+			if t1_vertex == t2_vertex {
+				match = true
+				t2_match_total += u32(j)
+			}
+		}
+		if !match {
+			t1_free_point = u32(i)
+		}
+		match = false
+	}
+
+	if t2_match_total == 3 {
+		t2_free_point = 0
+	} else if t2_match_total == 2 {
+		t2_free_point = 1
+	} else if t2_match_total == 1 {
+		t2_free_point = 2
+	}
+
+	t1_edge_1 := vec2_from_points(
+		triangulation.vertices[t1][t1_free_point + 1 if (t1_free_point + 1 < 3) else t1_free_point + 1 - 3],
+		triangulation.vertices[t1][t1_free_point],
+	)
+	t1_edge_2 := vec2_from_points(
+		triangulation.vertices[t1][t1_free_point],
+		triangulation.vertices[t1][t1_free_point + 2 if (t1_free_point + 2 < 3) else t1_free_point + 2 - 3],
+	)
+
+	t2_edge_1 := vec2_from_points(
+		triangulation.vertices[t2][t2_free_point + 1 if (t2_free_point + 1 < 3) else t2_free_point + 1 - 3],
+		triangulation.vertices[t2][t2_free_point],
+	)
+	t2_edge_2 := vec2_from_points(
+		triangulation.vertices[t2][t2_free_point],
+		triangulation.vertices[t2][t2_free_point + 2 if (t2_free_point + 2 < 3) else t2_free_point + 2 - 3],
+	)
+
+	cross_t1_1_t1_2 := cross(t1_edge_1, t1_edge_2)
+	cross_t1_1_t2_2 := cross(t1_edge_1, t2_edge_2)
+	cross_t2_1_t1_2 := cross(t2_edge_1, t1_edge_2)
+	cross_t2_1_t2_2 := cross(t2_edge_1, t2_edge_2)
+
+	return(
+		(cross_t1_1_t1_2 > 0 &&
+			cross_t1_1_t2_2 > 0 &&
+			cross_t2_1_t1_2 > 0 &&
+			cross_t2_1_t2_2 > 0) ||
+		(cross_t1_1_t1_2 < 0 &&
+				cross_t1_1_t2_2 < 0 &&
+				cross_t2_1_t1_2 < 0 &&
+				cross_t2_1_t2_2 < 0) \
+	)
+}
+
+swap_edge :: proc(t1, t2: u32, triangulation: ^Triangulation) {
 	//Swap the edge between the two triangles. t1 is stack triangle, t2 contains the point.
 
 	//Should have 4 vertices. Two shared.
 	//Shared vertices will be both non P vertices in t2.
 	//P will be part of the new edge.
+	//if !is_convex(t1, t2, triangulation^) {
+	//fmt.println("Could not swap, not convex")
+	//	return
+	//}
 	vertices := [4]renderer.Point{}
 	indices := [4]u32{}
 
-	vertices[0] = t2.vertices[0] //Point P
-	indices[0] = t2.indices[0] //Point P
+	vertices[0] = triangulation.vertices[t2][0] //Point P
+	indices[0] = triangulation.indices[t2][0] //Point P
 
-	adjacent_face := find_closest_edge(t1, vertices[0])
+	vertices[1] = triangulation.vertices[t2][1] //First shared vertex
+	indices[1] = triangulation.indices[t2][1] //First shared index
+	vertices[2] = triangulation.vertices[t2][2] //Second shared vertex
+	indices[2] = triangulation.indices[t2][2] //Second shared index
 
-	vertices[1] =
-		t1.vertices[adjacent_face + 1 if (adjacent_face + 1 < 3) else adjacent_face + 1 - 3] //First shared vertex
-	indices[1] =
-		t1.indices[adjacent_face + 1 if (adjacent_face + 1 < 3) else adjacent_face + 1 - 3] //First shared index
-	vertices[2] = t1.vertices[adjacent_face] //Second shared vertex
-	indices[2] = t1.indices[adjacent_face] //Second shared index
+	t1_free_vertex: u32
 
-	vertices[3] =
-		t1.vertices[adjacent_face + 2 if (adjacent_face + 2 < 3) else adjacent_face + 2 - 3] //Free point on triangle without point P
-	indices[3] =
-		t1.indices[adjacent_face + 2 if (adjacent_face + 2 < 3) else adjacent_face + 2 - 3] //Free point index on triangle without point P
+	for vertex, i in triangulation.vertices[t1] {
+		if vertex != vertices[1] && vertex != vertices[2] {
+			t1_free_vertex = u32(i)
+		}
+	}
+
+	vertices[3] = triangulation.vertices[t1][t1_free_vertex] //Free point on triangle without point P
+	indices[3] = triangulation.indices[t1][t1_free_vertex] //Free point index on triangle without point P
 
 	//t1 = v2, v1, v3
 	//t2 = v0, v1, v2
@@ -350,32 +448,58 @@ swap_edge :: proc(t1, t2: ^Triangle) {
 	//t1 = v0, v3, v2
 	//t2 = v0, v1, v3
 
-	t1.vertices[0] = vertices[0];t1.indices[0] = indices[0]
-	t1.vertices[1] = vertices[3];t1.indices[1] = indices[3]
-	t1.vertices[2] = vertices[2];t1.indices[2] = indices[2]
+	triangulation.vertices[t1][0] = vertices[0];triangulation.indices[t1][0] = indices[0]
+	triangulation.vertices[t1][1] = vertices[3];triangulation.indices[t1][1] = indices[3]
+	triangulation.vertices[t1][2] = vertices[2];triangulation.indices[t1][2] = indices[2]
 
-	t2.vertices[0] = vertices[0];t2.indices[0] = indices[0]
-	t2.vertices[1] = vertices[1];t2.indices[1] = indices[1]
-	t2.vertices[2] = vertices[3];t2.indices[2] = indices[3]
+	triangulation.vertices[t2][0] = vertices[0];triangulation.indices[t2][0] = indices[0]
+	triangulation.vertices[t2][1] = vertices[1];triangulation.indices[t2][1] = indices[1]
+	triangulation.vertices[t2][2] = vertices[3];triangulation.indices[t2][2] = indices[3]
 
-	t1_adjacencies := t1.adjacencies
-	t2_adjacencies := t2.adjacencies
+	t1_adjacencies := triangulation.adjacencies[t1]
+	t2_adjacencies := triangulation.adjacencies[t2]
 
-	t1.adjacencies[0] = t2
-	t1.adjacencies[1] =
-		t2_adjacencies[adjacent_face + 2 if (adjacent_face + 2 < 3) else adjacent_face + 2 - 3]
-	t2.adjacencies[0] = t1_adjacencies[0]
-	t2.adjacencies[1] =
-		t2_adjacencies[adjacent_face + 1 if (adjacent_face + 1 < 3) else adjacent_face + 1 - 3]
-	t2.adjacencies[2] = t1
+	triangulation.adjacencies[t1][0] = t2
+	triangulation.adjacencies[t1][1] = t2_adjacencies[t1_free_vertex]
+	triangulation.adjacencies[t1][2] = t2_adjacencies[2]
+	triangulation.adjacencies[t2][1] =
+		t2_adjacencies[t1_free_vertex + 2 if (t1_free_vertex + 2 < 3) else t1_free_vertex + 2 - 3]
+	triangulation.adjacencies[t2][2] = t1
+
+	for i in 0 ..< 2 {
+		if triangulation.adjacencies[t1][i + 1] != 0xFFFFFFFF {
+			matching_edge := find_matching_edge(
+				t1,
+				triangulation.adjacencies[t1][i + 1],
+				triangulation,
+			)
+			triangulation.adjacencies[triangulation.adjacencies[t1][i + 1]] = t1
+		}
+
+		if triangulation.adjacencies[t2][i] != 0xFFFFFFFF {
+			matching_edge := find_matching_edge(
+				t2,
+				triangulation.adjacencies[t2][i],
+				triangulation,
+			)
+			triangulation.adjacencies[triangulation.adjacencies[t2][i]] = t2
+		}
+	}
+
+	triangulation.adjacencies[triangulation.adjacencies[t2][2]] = 0
 }
 
-point_in_circumcircle :: proc(triangle: ^Triangle, point: renderer.Point) -> bool {
+point_in_circumcircle :: proc(
+	triangle_index: u32,
+	point: renderer.Point,
+	triangulation: Triangulation,
+) -> bool {
 	//Tests if a point is inside the circumcircle of a triangle.
-	vec_13 := vec2_from_points(triangle.vertices[0], triangle.vertices[2])
-	vec_23 := vec2_from_points(triangle.vertices[1], triangle.vertices[2])
-	vec_1p := vec2_from_points(triangle.vertices[0], point)
-	vec_2p := vec2_from_points(triangle.vertices[1], point)
+	vertices := triangulation.vertices[triangle_index]
+	vec_13 := vec2_from_points(vertices[0], vertices[2])
+	vec_23 := vec2_from_points(vertices[1], vertices[2])
+	vec_1p := vec2_from_points(vertices[0], point)
+	vec_2p := vec2_from_points(vertices[1], point)
 
 	cos_A := dot(vec_13, vec_23)
 	cos_B := dot(vec_1p, vec_2p)
@@ -399,85 +523,104 @@ point_in_circumcircle :: proc(triangle: ^Triangle, point: renderer.Point) -> boo
 
 triangulate :: proc(glyf: ^Glyf_Data) {
 	//Triangulate the glyf based on the glyf coordinates.
+	triangulation := Triangulation {
+		index          = make([dynamic]u32, allocator = context.temp_allocator),
+		vertices       = make([dynamic]Vertices, allocator = context.temp_allocator),
+		indices        = make([dynamic]Indices, allocator = context.temp_allocator),
+		adjacencies    = make([dynamic]Adjacencies, allocator = context.temp_allocator),
+		destroyed_list = make([dynamic]u32, allocator = context.temp_allocator),
+	}
+
 	glyf_point_cloud := glyf.bezier_curve_points
 
-	fmt.println("Doing triangulation...", len(glyf_point_cloud))
+	//fmt.println("Doing triangulation...", len(glyf_point_cloud))
 
 	scaled_point_cloud := scale_point_cloud(glyf_point_cloud)
 
-	parent_triangle: ^Triangle
+	base_triangle_vertices := Vertices{{50, -50}, {0, 50}, {-50, -50}}
+	base_triangle_indices := Indices{0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF}
+	base_triangle_adjacencies := Adjacencies{0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF}
 
-	base_triangle := triangle(
-		vertices = {{100, -100}, {0, 100}, {-100, -100}},
-		indicies = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF},
-	)
-	current_triangle := &base_triangle //Reference to whatever triangle we're currently inside of.
+	append(&triangulation.index, 0)
+	append(&triangulation.vertices, base_triangle_vertices)
+	append(&triangulation.indices, base_triangle_indices)
+	append(&triangulation.adjacencies, base_triangle_adjacencies)
 
-	adjacent_stack := make([dynamic]^Triangle, allocator = context.temp_allocator)
+	adjacent_stack := make([dynamic]u32, allocator = context.temp_allocator)
 	defer delete(adjacent_stack)
 
 	for point, i in scaled_point_cloud {
-		fmt.println("Adding point", i)
+		//fmt.println("Adding point", i)
 		clear(&adjacent_stack)
-		containing_triangle := find_containing_triangle(current_triangle, point)
+		containing_index := find_containing_triangle(point, triangulation)
 		for i in 0 ..< 3 {
-			if containing_triangle.adjacencies[i] != nil {
-				append(&adjacent_stack, containing_triangle.adjacencies[i])
+			if triangulation.adjacencies[containing_index][i] != 0xFFFFFFFF {
+				append(&adjacent_stack, triangulation.adjacencies[containing_index][i])
 			}
 		}
 
-		fmt.println("Added to stack", len(adjacent_stack))
+		//fmt.println("Added to stack", len(adjacent_stack))
 
-		make_new_triangles(containing_triangle, point, u32(i))
+		make_new_triangles(containing_index, point, u32(i), &triangulation)
+		append(&triangulation.destroyed_list, containing_index)
 
-		fmt.println("Made new triangles")
+		//fmt.println("Made new triangles")
 
 		for len(adjacent_stack) > 0 {
 			stack_triangle := pop(&adjacent_stack)
+			//fmt.println("Popped stack triangle")
 
-			if point_in_circumcircle(stack_triangle, point) {
+			if point_in_circumcircle(stack_triangle, point, triangulation) {
+				//fmt.println("Checking if circumcircle")
 				//Wrong diagonal between stack triangle and the stack triangle adjacency which points towards point.
-				stack_triangle_adjacency := find_closest_edge(stack_triangle, point)
-				pair_triangle := stack_triangle.adjacencies[stack_triangle_adjacency]
-
-				//swap_edge(stack_triangle, pair_triangle)
-				//append(&adjacent_stack, stack_triangle.adjacencies[1])
-				//append(&adjacent_stack, pair_triangle.adjacencies[1])
+				pair_triangle: u32
+				for adjacent_triangle in triangulation.adjacencies[stack_triangle] {
+					if adjacent_triangle != 0xFFFFFFFF {
+						for vertex in triangulation.vertices[adjacent_triangle] {
+							if vertex == point {
+								pair_triangle = adjacent_triangle
+							}
+						}
+					}
+				}
+				swap_edge(stack_triangle, pair_triangle, &triangulation)
+				if triangulation.adjacencies[stack_triangle][1] != 0xFFFFFFFF {
+					append(&adjacent_stack, triangulation.adjacencies[stack_triangle][1])
+				}
+				if triangulation.adjacencies[pair_triangle][1] != 0xFFFFFFFF {
+					append(&adjacent_stack, triangulation.adjacencies[pair_triangle][1])
+				}
 			}
+			//fmt.println("Not circumcircle")
 		}
-		current_triangle = containing_triangle.child_last
 	}
-
-	fmt.println("Scaled point cloud")
 
 	indices := make([dynamic]u32, allocator = glyf.allocator)
-	prev_triangle := current_triangle
-	fail_count: u8
 
-	for {
-		if !current_triangle.traversed { 	//Only add indices for each triangle once.
-			for index in current_triangle.indices {
-				if index != 0xFFFFFFFF {
-					append(&indices, index)
-				}
-			}
-			current_triangle.traversed = true
-		}
-		fail_count = 0
-		for adjacent_triangle in current_triangle.adjacencies {
-			if adjacent_triangle != nil {
-				if !adjacent_triangle.traversed {
-					current_triangle = adjacent_triangle
-				} else {
-					fail_count += 1
-				}
-			} else {
-				fail_count += 1
+	//NOTE:Can have a list of all triangles in the glyf and loop over them for adding indices. Since indices link to specific points and the points will not change order. Doesn't matter what order the triangles are looped over.
+
+	index_destroyed: bool
+	for triangle_index, i in triangulation.index {
+		for index in triangulation.indices[triangle_index] {
+			if index == 0xFFFFFFFF {
+				append(&triangulation.destroyed_list, triangle_index)
 			}
 		}
-		if fail_count >= 3 {
-			break
+		for destroyed_index in triangulation.destroyed_list {
+			if triangle_index == destroyed_index {
+				index_destroyed = true
+				break
+			}
 		}
+
+		if !index_destroyed {
+			for index in triangulation.indices[triangle_index] {
+				append(&indices, index)
+			}
+		}
+		index_destroyed = false
 	}
+
 	glyf.indices = indices[:]
+	//fmt.println("Indices:", len(indices))
 }
