@@ -976,8 +976,8 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 		bezier_curve_end_points[i] = cast(u32)len(bezier_curve_points) - 1
 		contour_start = cast(int)end_index + 1
 	}
-	glyf_data.bezier_curve_points = bezier_curve_points[:]
-	glyf_data.bezier_contour_end_pts = bezier_curve_end_points
-	//glyf_data.bezier_curve_points = curve_points[:]
-	//glyf_data.bezier_contour_end_pts = curve_contour_end_points[:]
+	//glyf_data.bezier_curve_points = bezier_curve_points[:]
+	//glyf_data.bezier_contour_end_pts = bezier_curve_end_points
+	glyf_data.bezier_curve_points = curve_points[:]
+	glyf_data.bezier_contour_end_pts = curve_contour_end_points[:]
 }

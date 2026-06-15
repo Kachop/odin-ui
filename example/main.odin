@@ -130,8 +130,7 @@ main :: proc() {
 	//Boilerplater setup
 
 	rwb.load_font(
-		"Momo_Signature/MomoSignature-Regular.ttf",
-		//"/Paul/Paul.ttf",
+		"/Paul/Paul.ttf", //"Momo_Signature/MomoSignature-Regular.ttf",
 	)
 
 	err := rwb.create_window(800, 600, "Example")

@@ -19,11 +19,8 @@ Indices :: [3]u32
 Adjacencies :: [3]u32
 
 Triangulation :: struct {
-	index:          [dynamic]u32,
-	vertices:       [dynamic]Vertices,
-	indices:        [dynamic]Indices,
-	adjacencies:    [dynamic]Adjacencies,
-	destroyed_list: [dynamic]u32,
+	vertices: [dynamic]Vertices,
+	indices:  [dynamic]Indices,
 }
 /*
 Triangle :: struct {
@@ -155,7 +152,7 @@ scale_point_cloud :: proc(points: []renderer.Point) -> []renderer.Point {
 	}
 	return scaled_points
 }
-
+/*
 point_in_triangle :: proc(point: renderer.Point, vertices: Vertices) -> bool {
 	//Uses barycentric method to figure out if a point is within a triangle.
 	v0 := vec2_from_points(vertices[2], vertices[0]) //C-A
@@ -488,14 +485,9 @@ swap_edge :: proc(t1, t2: u32, triangulation: ^Triangulation) {
 
 	triangulation.adjacencies[triangulation.adjacencies[t2][2]] = 0
 }
-
-point_in_circumcircle :: proc(
-	triangle_index: u32,
-	point: renderer.Point,
-	triangulation: Triangulation,
-) -> bool {
+*/
+point_in_circumcircle :: proc(vertices: Vertices, point: renderer.Point) -> bool {
 	//Tests if a point is inside the circumcircle of a triangle.
-	vertices := triangulation.vertices[triangle_index]
 	vec_13 := vec2_from_points(vertices[0], vertices[2])
 	vec_23 := vec2_from_points(vertices[1], vertices[2])
 	vec_1p := vec2_from_points(vertices[0], point)
@@ -521,8 +513,60 @@ point_in_circumcircle :: proc(
 	}
 }
 
+edge_in_triangle :: proc(vertices: Vertices, edge: Vec2) -> bool {
+	match: int
+
+	for point in vertices {
+		if edge[0] == point {
+			match += 1
+		}
+		if edge[1] == point {
+			match += 1
+		}
+	}
+
+	if match == 2 {
+		return true
+	}
+	return false
+}
+
+edge_is_shared :: proc(
+	bad_triangles: [dynamic]u32,
+	edge: Vec2,
+	triangulation: Triangulation,
+	skip_triangle: u32,
+) -> bool {
+	for i in 0 ..< len(bad_triangles) {
+		if u32(i) == skip_triangle {
+			continue
+		}
+		vertices := triangulation.vertices[bad_triangles[i]]
+		if edge_in_triangle(vertices, edge) {
+			return true
+		}
+	}
+	return false
+}
+
+make_new_triangle :: proc(
+	edge: Vec2,
+	edge_indices: [2]u32,
+	point: renderer.Point,
+	point_index: u32,
+	triangulation: ^Triangulation,
+) {
+	//Makes a new point from the edge and the point.
+	vertices := Vertices{point, edge[0], edge[1]}
+	indices := Indices{point_index, edge_indices[0], edge_indices[1]}
+
+	append(&triangulation.vertices, vertices)
+	append(&triangulation.indices, indices)
+}
+
 triangulate :: proc(glyf: ^Glyf_Data) {
 	//Triangulate the glyf based on the glyf coordinates.
+	/*
 	triangulation := Triangulation {
 		index          = make([dynamic]u32, allocator = context.temp_allocator),
 		vertices       = make([dynamic]Vertices, allocator = context.temp_allocator),
@@ -594,31 +638,103 @@ triangulate :: proc(glyf: ^Glyf_Data) {
 			//fmt.println("Not circumcircle")
 		}
 	}
+	*/
+
+	triangulation := Triangulation {
+		vertices = make([dynamic]Vertices, allocator = context.temp_allocator),
+		indices  = make([dynamic]Indices, allocator = context.temp_allocator),
+	}
+
+	defer {
+		delete(triangulation.vertices)
+		delete(triangulation.indices)
+	}
+
+	glyf_point_cloud := glyf.bezier_curve_points
+
+	//fmt.println("Doing triangulation...", len(glyf_point_cloud))
+
+	scaled_point_cloud := scale_point_cloud(glyf_point_cloud)
+
+	base_triangle_vertices := Vertices{{10, -10}, {0, 10}, {-10, -10}}
+	base_triangle_indices := Indices{0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF}
+
+	append(&triangulation.vertices, base_triangle_vertices)
+	append(&triangulation.indices, base_triangle_indices)
+
+	bad_triangles := make([dynamic]u32, allocator = context.temp_allocator)
+	polygon_edges := make([dynamic]Vec2, allocator = context.temp_allocator)
+	polygon_indices := make([dynamic][2]u32, allocator = context.temp_allocator)
+
+	defer delete(bad_triangles)
+	defer delete(polygon_edges)
+	defer delete(polygon_indices)
+
+	for point, i in scaled_point_cloud {
+		fmt.print("\rAdding point:", i, "/", len(scaled_point_cloud))
+		clear(&bad_triangles)
+		clear(&polygon_edges)
+		clear(&polygon_indices)
+
+		for triangle_vertices, idx in triangulation.vertices {
+			if point_in_circumcircle(triangle_vertices, point) {
+				append(&bad_triangles, u32(idx))
+			}
+		}
+
+		for triangle_index, bad_triangle_index in bad_triangles {
+			vertices := triangulation.vertices[triangle_index]
+			indices := triangulation.indices[triangle_index]
+			for i in 0 ..< 3 {
+				edge := vec2_from_points(
+					vertices[i],
+					vertices[i + 1 if (i + 1 < 3) else i + 1 - 3],
+				)
+				edge_indices := [2]u32{indices[i], indices[i + 1 if (i + 1 < 3) else i + 1 - 3]}
+				if !edge_is_shared(bad_triangles, edge, triangulation, u32(bad_triangle_index)) {
+					append(&polygon_edges, edge)
+					append(&polygon_indices, edge_indices)
+				}
+			}
+		}
+
+		triangles_removed: u32
+		for bad_triangle in bad_triangles {
+			ordered_remove(&triangulation.vertices, bad_triangle - triangles_removed)
+			ordered_remove(&triangulation.indices, bad_triangle - triangles_removed)
+			triangles_removed += 1
+		}
+
+		for polygon_index in 0 ..< len(polygon_edges) {
+			make_new_triangle(
+				polygon_edges[polygon_index],
+				polygon_indices[polygon_index],
+				point,
+				u32(i),
+				&triangulation,
+			)
+		}
+	}
+	fmt.print("\n")
 
 	indices := make([dynamic]u32, allocator = glyf.allocator)
 
 	//NOTE:Can have a list of all triangles in the glyf and loop over them for adding indices. Since indices link to specific points and the points will not change order. Doesn't matter what order the triangles are looped over.
 
-	index_destroyed: bool
-	for triangle_index, i in triangulation.index {
-		for index in triangulation.indices[triangle_index] {
+	exclude_triangle: bool
+	for triangle_indices, i in triangulation.indices {
+		for index in triangle_indices {
 			if index == 0xFFFFFFFF {
-				append(&triangulation.destroyed_list, triangle_index)
-			}
-		}
-		for destroyed_index in triangulation.destroyed_list {
-			if triangle_index == destroyed_index {
-				index_destroyed = true
-				break
+				exclude_triangle = true
 			}
 		}
 
-		if !index_destroyed {
-			for index in triangulation.indices[triangle_index] {
+		if !exclude_triangle {
+			for index in triangle_indices {
 				append(&indices, index)
 			}
 		}
-		index_destroyed = false
+		exclude_triangle = false
 	}
 
 	glyf.indices = indices[:]
