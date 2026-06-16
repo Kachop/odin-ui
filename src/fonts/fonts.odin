@@ -952,15 +952,15 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 					curve_points[index],
 					10,
 				)
+
+				//Add all of the points to the bezier curve points list. Miss out the last point so it doesn't get added twice.
+				for point in bezier_points[:len(bezier_points) - 2] {
+					append(&bezier_curve_points, point)
+				}
 			} else {
 				//If the points form a straight line no interpolation is needed.
 				//Saves more points, and thus triangles being unncessesatily generated.
 				append(&bezier_curve_points, curve_points[index - 2])
-			}
-
-			//Add all of the points to the bezier curve points list. Miss out the last point so it doesn't get added twice.
-			for point in bezier_points[:len(bezier_points) - 2] {
-				append(&bezier_curve_points, point)
 			}
 		}
 

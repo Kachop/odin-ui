@@ -18,9 +18,18 @@ Vertices :: [3]renderer.Point
 Indices :: [3]u32
 Adjacencies :: [3]u32
 
+Triangle :: struct {
+	vertices:    Vertices,
+	indices:     Indices,
+	adjacencies: Adjacencies,
+	is_bad:      bool,
+}
+
 Triangulation :: struct {
-	vertices: [dynamic]Vertices,
-	indices:  [dynamic]Indices,
+	vertices:    [dynamic]Vertices,
+	indices:     [dynamic]Indices,
+	adjacencies: [dynamic]Adjacencies,
+	is_bad:      [dynamic]bool,
 }
 /*
 Triangle :: struct {
@@ -531,20 +540,10 @@ edge_in_triangle :: proc(vertices: Vertices, edge: Vec2) -> bool {
 	return false
 }
 
-edge_is_shared :: proc(
-	bad_triangles: [dynamic]u32,
-	edge: Vec2,
-	triangulation: Triangulation,
-	skip_triangle: u32,
-) -> bool {
-	for i in 0 ..< len(bad_triangles) {
-		if u32(i) == skip_triangle {
-			continue
-		}
-		vertices := triangulation.vertices[bad_triangles[i]]
-		if edge_in_triangle(vertices, edge) {
-			return true
-		}
+edge_is_shared :: proc(triangle_idx: u32, edge: Vec2, triangulation: Triangulation) -> bool {
+	vertices := triangulation.vertices[triangle_idx]
+	if edge_in_triangle(vertices, edge) {
+		return true
 	}
 	return false
 }
@@ -562,6 +561,36 @@ make_new_triangle :: proc(
 
 	append(&triangulation.vertices, vertices)
 	append(&triangulation.indices, indices)
+}
+
+make_new_triangles :: proc(
+	edges: [dynamic]Vec2,
+	edge_indices: [dynamic][2]u32,
+	edge_adjacencies: [dynamic]u32,
+	point: renderer.Point,
+	point_index: u32,
+	triangulation: ^Triangulation,
+) {
+	//Make X new triangles around the point. Connect all adjacencies
+	first_child_idx := len(triangulation.vertices)
+	for edge, idx in edges {
+		vertices := Vertices{point, edge[0], edge[1]}
+		indices := Indices{point_index, edge_indices[idx][0], edge_indices[idx][1]}
+		adjacencies: Adjacencies
+
+		//Edges are not added in order, not sure how to figure out adjacencies
+		if idx > 0 {
+
+		}
+		if idx == len(edges) - 1 {
+
+		}
+
+		append(&triangulation.vertices, vertices)
+		append(&triangulation.indices, indices)
+		append(&triangulation.adjacencies, adjacencies)
+		append(&triangulation.is_bad, false)
+	}
 }
 
 triangulate :: proc(glyf: ^Glyf_Data) {
@@ -641,13 +670,17 @@ triangulate :: proc(glyf: ^Glyf_Data) {
 	*/
 
 	triangulation := Triangulation {
-		vertices = make([dynamic]Vertices, allocator = context.temp_allocator),
-		indices  = make([dynamic]Indices, allocator = context.temp_allocator),
+		vertices    = make([dynamic]Vertices, allocator = context.temp_allocator),
+		indices     = make([dynamic]Indices, allocator = context.temp_allocator),
+		adjacencies = make([dynamic]Adjacencies, allocator = context.temp_allocator),
+		is_bad      = make([dynamic]bool, allocator = context.temp_allocator),
 	}
 
 	defer {
 		delete(triangulation.vertices)
 		delete(triangulation.indices)
+		delete(triangulation.adjacencies)
+		delete(triangulation.is_bad)
 	}
 
 	glyf_point_cloud := glyf.bezier_curve_points
@@ -658,52 +691,65 @@ triangulate :: proc(glyf: ^Glyf_Data) {
 
 	base_triangle_vertices := Vertices{{10, -10}, {0, 10}, {-10, -10}}
 	base_triangle_indices := Indices{0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF}
+	base_triangle_adjacencies := Adjacencies{0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF}
 
 	append(&triangulation.vertices, base_triangle_vertices)
 	append(&triangulation.indices, base_triangle_indices)
+	append(&triangulation.adjacencies, base_triangle_adjacencies)
+	append(&triangulation.is_bad, false)
 
-	bad_triangles := make([dynamic]u32, allocator = context.temp_allocator)
 	polygon_edges := make([dynamic]Vec2, allocator = context.temp_allocator)
 	polygon_indices := make([dynamic][2]u32, allocator = context.temp_allocator)
+	polygon_adjacencies := make([dynamic]u32, allocator = context.temp_allocator)
 
-	defer delete(bad_triangles)
 	defer delete(polygon_edges)
 	defer delete(polygon_indices)
 
 	for point, i in scaled_point_cloud {
 		fmt.print("\rAdding point:", i, "/", len(scaled_point_cloud))
-		clear(&bad_triangles)
 		clear(&polygon_edges)
 		clear(&polygon_indices)
 
 		for triangle_vertices, idx in triangulation.vertices {
 			if point_in_circumcircle(triangle_vertices, point) {
-				append(&bad_triangles, u32(idx))
+				triangulation.is_bad[idx] = true
+			} else {
+				triangulation.is_bad[idx] = false
 			}
 		}
+		fmt.println("Done checking circumcircle")
 
-		for triangle_index, bad_triangle_index in bad_triangles {
-			vertices := triangulation.vertices[triangle_index]
-			indices := triangulation.indices[triangle_index]
-			for i in 0 ..< 3 {
+		for bad_triangle, idx in triangulation.is_bad {
+			if !bad_triangle {
+				break
+			}
+			vertices := triangulation.vertices[idx]
+			indices := triangulation.indices[idx]
+			#unroll for j in 0 ..< 3 {
 				edge := vec2_from_points(
-					vertices[i],
-					vertices[i + 1 if (i + 1 < 3) else i + 1 - 3],
+					vertices[j],
+					vertices[j + 1 if (j + 1 < 3) else j + 1 - 3],
 				)
-				edge_indices := [2]u32{indices[i], indices[i + 1 if (i + 1 < 3) else i + 1 - 3]}
-				if !edge_is_shared(bad_triangles, edge, triangulation, u32(bad_triangle_index)) {
+				edge_indices := [2]u32{indices[j], indices[j + 1 if (j + 1 < 3) else j + 1 - 3]}
+				if !edge_is_shared(u32(idx), edge, triangulation) {
 					append(&polygon_edges, edge)
 					append(&polygon_indices, edge_indices)
+					append(&polygon_adjacencies, triangulation.adjacencies[idx][j])
 				}
 			}
 		}
+		fmt.println("Done creating polygon")
 
 		triangles_removed: u32
-		for bad_triangle in bad_triangles {
-			ordered_remove(&triangulation.vertices, bad_triangle - triangles_removed)
-			ordered_remove(&triangulation.indices, bad_triangle - triangles_removed)
+		for bad_triangle, idx in triangulation.is_bad {
+			if !bad_triangle {
+				break
+			}
+			ordered_remove(&triangulation.vertices, u32(idx) - triangles_removed)
+			ordered_remove(&triangulation.indices, u32(idx) - triangles_removed)
 			triangles_removed += 1
 		}
+		fmt.println("Done removing bad triangles")
 
 		for polygon_index in 0 ..< len(polygon_edges) {
 			make_new_triangle(
@@ -714,6 +760,7 @@ triangulate :: proc(glyf: ^Glyf_Data) {
 				&triangulation,
 			)
 		}
+		fmt.println("Done creating new triangles")
 	}
 	fmt.print("\n")
 
