@@ -170,10 +170,10 @@ point_in_circumcircle :: proc(vertices: Vertices, point: renderer.Point) -> bool
 		return false
 	}*/
 	mat := matrix[4, 4]f32{
-		vertices[0].x, vertices[0].y, (vertices[0].x * vertices[0].x) + (vertices[0].y * vertices[0].y), 1, 
-		vertices[1].x, vertices[1].y, (vertices[1].x * vertices[1].x) + (vertices[1].y * vertices[1].y), 1, 
-		vertices[2].x, vertices[2].y, (vertices[2].x * vertices[2].x) + (vertices[2].y * vertices[2].y), 1, 
-		point.x, point.y, (point.x * point.x) + (point.y * point.y), 1, 
+		vertices[0].x, vertices[0].y, (vertices[0].x * vertices[0].x) + (vertices[0].y * vertices[0].y), 1,
+		vertices[1].x, vertices[1].y, (vertices[1].x * vertices[1].x) + (vertices[1].y * vertices[1].y), 1,
+		vertices[2].x, vertices[2].y, (vertices[2].x * vertices[2].x) + (vertices[2].y * vertices[2].y), 1,
+		point.x, point.y, (point.x * point.x) + (point.y * point.y), 1,
 	}
 	det := linalg.determinant(mat)
 	if det > 0 {
