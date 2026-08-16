@@ -15,11 +15,12 @@ import "core:unicode/utf8"
 //Logic for loading and utilising TTF fonts.
 //Will read a .ttf file and parse all of the information necessary for font rendering.
 Font :: struct {
-	base_size:  int,
-	glyf_count: int,
-	glyf_info:  map[rune]Glyf_Data, //Bezier points calculated
-	arena:      vmem.Arena,
-	allocator:  mem.Allocator,
+	base_size:    int,
+	glyf_count:   int,
+	glyf_info:    map[rune]Glyf_Data, //Index and count for curve points
+	curve_points: []renderer.Point, //Global curve points for all glyphs
+	arena:        vmem.Arena,
+	allocator:    mem.Allocator,
 }
 
 TTF_Reader :: struct {
@@ -93,10 +94,9 @@ Glyf_Data :: struct {
 	flags:                      []u8,
 	em_coords_x, em_coords_y:   []f32,
 	cached:                     bool,
-	bezier_curve_points:        []renderer.Point, //calculated the first time the glyf is drawn
-	bezier_contour_end_pts:     []u32,
 	units_per_em:               u16,
-	indices:                    []u32,
+	glyph_index:                u16, //For index into global font curve array
+	curve_count:                u16, //For looping through just one glyph
 	allocator:                  mem.Allocator,
 }
 
@@ -661,9 +661,8 @@ ttf_read_glyf_data :: proc(
 		x_coords,
 		y_coords,
 		false,
-		{},
-		{},
 		units_per_em,
+		{},
 		{},
 		allocator,
 	}
@@ -740,16 +739,19 @@ ttf_load_font :: proc(filename: string) -> (Font, TTF_Reader_Error) {
 
 	glyf_info := make(map[rune]Glyf_Data, allocator = font_alloc)
 
-	i := 1
 	fmt.println("Loading", len(ttf_reader.cmap), "glyfs")
+
+	curve_points := make([dynamic]renderer.Point, font.allocator)
+
+	glyph_index: u16 = 0
+
 	for key, val in ttf_reader.cmap {
 		ttf_move_to_location(&ttf_reader, ttf_reader.tables["glyf"])
 		ttf_skip_bytes(&ttf_reader, cast(u32)offsets[val])
 		glyf_info[key] = ttf_read_glyf_data(&ttf_reader, val, units_per_em, font_alloc)
 		calculate_curve_points(&glyf_info[key])
-		triangulate(&glyf_info[key])
-		fmt.println(i, "/", len(ttf_reader.cmap))
-		i += 1
+		//triangulate(&glyf_info[key])
+		glyph_index += 1
 	}
 
 	font.base_size = cast(int)lowest_rec_PPEM
@@ -930,7 +932,7 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 		append(&curve_contour_end_points, cast(u32)(len(curve_points) - 1))
 	}
 
-
+	/*
 	bezier_curve_points := make([dynamic]renderer.Point, allocator = glyf_data.allocator)
 	bezier_curve_end_points := make(
 		[]u32,
@@ -978,6 +980,7 @@ calculate_curve_points :: proc(glyf_data: ^Glyf_Data) {
 	}
 	glyf_data.bezier_curve_points = bezier_curve_points[:]
 	glyf_data.bezier_contour_end_pts = bezier_curve_end_points
-	//glyf_data.bezier_curve_points = curve_points[:]
-	//glyf_data.bezier_contour_end_pts = curve_contour_end_points[:]
+	*/
+	glyf_data.bezier_curve_points = curve_points[:]
+	glyf_data.bezier_contour_end_pts = curve_contour_end_points[:]
 }

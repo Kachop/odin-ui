@@ -27,6 +27,7 @@ Mode :: enum {
 Shader :: enum {
 	Rect,
 	Point,
+	Glyf,
 }
 
 Point :: [2]f32
@@ -40,12 +41,13 @@ Rectangle :: struct #packed {
 
 @(private)
 Render_State :: struct {
-	window_width:  f32, //Pixels
-	window_height: f32, //Pixels
-	shaders:       map[Shader]u32,
-	mode:          Mode,
-	vertex_list:   [dynamic]Point,
-	indices_list:  [dynamic]u32,
+	window_width:      f32, //Pixels
+	window_height:     f32, //Pixels
+	projection_matrix: matrix[4, 4]f32,
+	shaders:           map[Shader]u32,
+	mode:              Mode,
+	vertex_list:       [dynamic]Point,
+	indices_list:      [dynamic]u32,
 }
 
 @(private)
@@ -72,23 +74,43 @@ init_context :: proc() {
 		.Rect,
 		fmt.tprint(cwd, "/src/renderer/shaders/rec_vs.shader", sep = ""),
 		fmt.tprint(cwd, "/src/renderer/shaders/rec_fs.shader", sep = ""),
-		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_vs.shader",
-		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/rec_fs.shader",
-		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_vs.shader",
-		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/rec_fs.shader",
 	)
 
 	create_shader_program(
 		.Point,
 		fmt.tprint(cwd, "/src/renderer/shaders/point_vs.shader", sep = ""),
 		fmt.tprint(cwd, "/src/renderer/shaders/point_fs.shader", sep = ""),
-		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_vs.shader",
-		//"/mnt/Guido/Development/Odin/odin-ui/src/renderer/shaders/point_fs.shader",
-		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_vs.shader",
-		//"/home/robert/Development/odin/odin-ui/src/renderer/shaders/point_fs.shader",
+	)
+
+	create_shader_program(
+		.Glyf,
+		fmt.tprint(cwd, "/src/renderer/shaders/glyf_vs.shader", sep = ""),
+		fmt.tprint(cwd, "/src/renderer/shaders/glyf_fs.shader", sep = ""),
 	)
 
 	use_shader_program(state.shaders[.Rect])
+}
+
+// Generates a 2D Orthographic Projection Matrix mapped to exact window pixel sizes.
+// This configuration sets (0,0) at the top-left corner and (width, height) at the bottom-right.
+get_projection_matrix :: proc(width, height: f32) -> matrix[4, 4]f32 {
+	m := matrix[4, 4]f32{}
+
+	// X-axis mapping
+	m[0][0] = 2.0 / width
+	m[3][0] = -1.0
+
+	// Y-axis mapping (Inverted so Y goes DOWN, matching standard UI layouts)
+	m[1][1] = -2.0 / height
+	m[3][1] = 1.0
+
+	// Z-axis mapping (Flat 2D layer depth staging)
+	m[2][2] = -1.0
+
+	// Homogeneous coordinate anchor
+	m[3][3] = 1.0
+
+	return m
 }
 
 //Start building layout structure
@@ -97,6 +119,7 @@ begin_drawing :: proc(window: glfw.WindowHandle) {
 	glfw.PollEvents()
 	//Update window dimensions, used for normalising the vertex coords.
 	state.window_width, state.window_height = platform.get_window_size()
+	state.projection_matrix = get_projection_matrix(state.window_width, state.window_height)
 	gl.Clear(gl.COLOR_BUFFER_BIT)
 }
 //Layout build, figure all the positions out
@@ -370,7 +393,7 @@ draw_glyf :: proc(
 	radius: f32,
 	colour: Colour_RGBA = RED,
 ) {
-	use_shader_program(state.shaders[.Point])
+	use_shader_program(state.shaders[.Glyf])
 	contour_start: u32 = 0
 
 	//for end_index in contour_end_points {
@@ -390,8 +413,8 @@ draw_glyf :: proc(
 		rwb_index(index)
 	}
 
-	shader_set_uniform4(state.shaders[.Point], "colour", normalise_colour(colour))
-	shader_set_uniform1(state.shaders[.Point], "point_size", radius)
+	shader_set_uniform4(state.shaders[.Glyf], "colour", normalise_colour(colour))
+	shader_set_uniform1(state.shaders[.Glyf], "point_size", radius)
 
 	rwb_end()
 	//contour_start = end_index + 1
@@ -412,34 +435,18 @@ draw_rect :: proc(
 
 	rwb_begin(.Triangles)
 
-	rwb_vertex_2f(
-		{
-			normalise_val(x + width, 0, state.window_width),
-			normalise_val(y, 0, state.window_height),
-		},
-	)
+	rwb_vertex_2f({x + width, y})
 
-	rwb_vertex_2f(
-		{
-			normalise_val(x + width, 0, state.window_width),
-			normalise_val(y + height, 0, state.window_height),
-		},
-	)
+	rwb_vertex_2f({x + width, y + height})
 
-	rwb_vertex_2f(
-		{
-			normalise_val(x, 0, state.window_width),
-			normalise_val(y + height, 0, state.window_height),
-		},
-	)
+	rwb_vertex_2f({x, y + height})
 
-	rwb_vertex_2f(
-		{normalise_val(x, 0, state.window_width), normalise_val(y, 0, state.window_height)},
-	)
+	rwb_vertex_2f({x, y})
 
 	rwb_indices([]u32{0, 1, 3, 1, 2, 3})
 
 	use_shader_program(state.shaders[.Rect])
+	shader_set_uniform_mat4(state.shaders[.Rect], "projection_matrix", &state.projection_matrix)
 	shader_set_uniform2(state.shaders[.Rect], "origin", [2]f32{x, y})
 	shader_set_uniform2(state.shaders[.Rect], "size", [2]f32{width, height})
 	shader_set_uniform4(state.shaders[.Rect], "radius", radius)

@@ -166,3 +166,9 @@ shader_set_uniform4 :: proc(program_id: u32, name: cstring, vals: Uniform_Vals4)
 		gl.Uniform4f(uniform_location, floats[0], floats[1], floats[2], floats[3])
 	}
 }
+
+shader_set_uniform_mat4 :: proc(program_id: u32, name: cstring, mat: ^matrix[4, 4]f32) {
+	uniform_location := gl.GetUniformLocation(program_id, name)
+	mat := mat
+	gl.UniformMatrix4fv(uniform_location, 1, gl.FALSE, raw_data(mat))
+}
